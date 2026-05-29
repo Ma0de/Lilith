@@ -1,5 +1,8 @@
-import type { Metadata } from "next";
+'use client';
+
 import { Geist, Geist_Mono } from "next/font/google";
+import { useEffect, useState } from "react";
+import { LoadingAnimation } from "@/components/LoadingAnimation";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -12,22 +15,32 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-export const metadata: Metadata = {
-  title: "Lilith WebUI",
-  description: "这下，是真存在了...吗",
-};
-
 export default function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const [showAnimation, setShowAnimation] = useState(true);
+
+  useEffect(() => {
+    setShowAnimation(false);
+  }, []);
+
+  if (showAnimation) {
+    return (
+      <html lang="en" className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}>
+        <body className="min-h-full flex flex-col">
+          <LoadingAnimation />
+        </body>
+      </html>
+    );
+  }
+
   return (
-    <html
-      lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
-    >
-      <body className="min-h-full flex flex-col">{children}</body>
+    <html lang="en" className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}>
+      <body className="min-h-full flex flex-col">
+        {children}
+      </body>
     </html>
   );
 }
