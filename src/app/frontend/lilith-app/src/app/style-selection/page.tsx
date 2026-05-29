@@ -89,9 +89,7 @@ export default function StyleSelectionPage() {
             setIsConfirming(true);
             localStorage.setItem('chatStyle', selectedStyle);
             localStorage.setItem('isLilithMode', String(isLilithMode));
-            setTimeout(() => {
-                router.push('/');
-            }, 30000);
+            router.push('/chat');
         }
     };
 
