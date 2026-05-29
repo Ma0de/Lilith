@@ -22,5 +22,9 @@
     "eslint-config-next": "16.2.6",
     "tailwindcss": "^4",
     "typescript": "^5"
+  },
+  "scripts": {
+    "build": "next build && npm run copy",
+    "copy": "xcopy /E /I /Y out ..\\..\\backend\\web\\out"
   }
 }
