@@ -4,9 +4,10 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "next build && npm run copy",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "copy": "xcopy /E /I /Y out ..\\..\\backend\\web\\out"
   },
   "dependencies": {
     "next": "16.2.6",
@@ -22,9 +23,5 @@
     "eslint-config-next": "16.2.6",
     "tailwindcss": "^4",
     "typescript": "^5"
-  },
-  "scripts": {
-    "build": "next build && npm run copy",
-    "copy": "xcopy /E /I /Y out ..\\..\\backend\\web\\out"
   }
 }
