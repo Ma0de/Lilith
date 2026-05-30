@@ -12,13 +12,16 @@ interface Message {
 export default function ChatPage() {
     const router = useRouter();
     const [messages, setMessages] = useState<Message[]>([
-        { id: 1, speaker: '莉莉丝', content: '欢迎回来，今天怎么样？需要我帮忙吗' },
+        { id: 1, speaker: '测试', content: '欢迎回来' },
     ]);
     const [inputText, setInputText] = useState('');
     const [isRevealing, setIsRevealing] = useState(false);
-    const [revealProgress, setRevealProgress] = useState(1); // 0-1，表示渐变进度
+    const [revealProgress, setRevealProgress] = useState(0);
     const [currentRevealingMessage, setCurrentRevealingMessage] = useState<Message | null>(null);
     const [style, setStyle] = useState<string>('');
+    const [waitingForNext, setWaitingForNext] = useState(false);
+    // 添加一个标志来标记是否正在切换消息
+    const [isSwitching, setIsSwitching] = useState(false);
 
     useEffect(() => {
         const savedStyle = localStorage.getItem('chatStyle');
@@ -32,18 +35,22 @@ export default function ChatPage() {
     // 从左到右渐变效果
     useEffect(() => {
         const lastMessage = messages[messages.length - 1];
-        if (lastMessage && !isRevealing && currentRevealingMessage?.id !== lastMessage.id) {
+        if (lastMessage && !isRevealing && !isSwitching) {
+            // 只有当不是正在切换状态时才启动新的渐变
             startGradientReveal(lastMessage);
         }
     }, [messages]);
 
     const startGradientReveal = (message: Message) => {
-        setIsRevealing(true);
+        // 立即设置切换状态和新的消息，防止闪现旧内容
+        setIsSwitching(true);
         setCurrentRevealingMessage(message);
         setRevealProgress(0);
+        setIsRevealing(true);
+        setWaitingForNext(false);
 
         const startTime = Date.now();
-        const duration = 600; // 0.6秒完成渐变
+        const duration = 600;
 
         const animate = () => {
             const elapsed = Date.now() - startTime;
@@ -55,15 +62,40 @@ export default function ChatPage() {
                 requestAnimationFrame(animate);
             } else {
                 setIsRevealing(false);
-                setCurrentRevealingMessage(null);
+                setIsSwitching(false);
+                setWaitingForNext(true);
             }
         };
 
         requestAnimationFrame(animate);
     };
 
+    const handleNextMessage = () => {
+        if (!waitingForNext || isRevealing || isSwitching) return;
+        
+        const reply: Message = {
+            id: Date.now(),
+            speaker: '测试',
+            content: getAutoReplyByStyle(style),
+        };
+        setMessages(prev => [...prev, reply]);
+        setWaitingForNext(false);
+    };
+
+    const getAutoReplyByStyle = (style: string): string => {
+        const replies = [
+            '11111',
+            '2222',
+            '33333',
+            '444444',
+            '555555'
+        ];
+        const randomReply = replies[Math.floor(Math.random() * replies.length)];
+        return randomReply;
+    };
+
     const handleSendMessage = () => {
-        if (!inputText.trim() || isRevealing) return;
+        if (!inputText.trim() || isRevealing || waitingForNext || isSwitching) return;
 
         const userInput = inputText;
         const newMessage: Message = {
@@ -73,6 +105,7 @@ export default function ChatPage() {
         };
         setMessages(prev => [...prev, newMessage]);
         setInputText('');
+        setWaitingForNext(false);
 
         setTimeout(() => {
             const reply: Message = {
@@ -91,32 +124,24 @@ export default function ChatPage() {
         return `「${input}」... 莉莉丝记住了呢～ ✨`;
     };
 
+    // 确保在切换期间使用新消息，避免闪现
     const currentDisplayMessage = currentRevealingMessage || messages[messages.length - 1];
     const currentSpeaker = currentDisplayMessage?.speaker || '莉莉丝';
     const currentContent = currentDisplayMessage?.content || '';
 
-    // 为文字创建从左到右的透明度渐变
     const renderGradientText = (text: string, progress: number) => {
         if (progress >= 1) {
-            // 完全显示时，所有文字都是完全可见的
             return text;
         }
 
-        // 根据progress计算哪个位置的字是完全透明的
         const chars = text.split('');
         const totalChars = chars.length;
         
         if (totalChars === 0) return '';
 
         return chars.map((char, index) => {
-            // 计算每个字的透明度
-            // 当progress为0时，所有字都是透明的
-            // 当progress为1时，所有字都是不透明的
-            // 中间状态：左边的字先变得不透明
-            const charPosition = index / totalChars; // 0-1，表示字的位置
+            const charPosition = index / totalChars;
             const opacity = Math.max(0, Math.min(1, (progress - charPosition * 0.7) / 0.3));
-            // progress - charPosition * 0.7：确保左边的字先显示
-            // 除以0.3：让渐变更加平滑
             
             return (
                 <span
@@ -136,6 +161,7 @@ export default function ChatPage() {
         <div 
             className="relative h-screen w-full overflow-hidden bg-black"
             style={{ cursor: `url('/styles/galgame/ui/cursor.png'), auto` }}
+            onClick={handleNextMessage}
         >
             {/* 背景图 */}
             <div
@@ -147,33 +173,22 @@ export default function ChatPage() {
                 }}
             />
 
-            {/* 历史消息记录 */}
-            <div className="absolute top-20 left-0 right-0 bottom-40 overflow-y-auto px-4 pointer-events-none">
-                <div className="mx-auto max-w-2xl space-y-3">
-                    {messages.slice(0, -1).map((msg) => (
-                        <div key={msg.id} className="text-center opacity-60">
-                            <span className="text-xs text-[#FF636D]">{msg.speaker}</span>
-                            <span className="text-xs text-white/50 mx-2">·</span>
-                            <span className="text-xs text-white/50">{msg.content}</span>
-                        </div>
-                    ))}
-                </div>
-            </div>
-
             {/* 返回按钮 */}
             <button
-                onClick={() => router.push('/style-selection')}
+                onClick={(e) => {
+                    e.stopPropagation();
+                    router.push('/style-selection');
+                }}
                 className="absolute top-6 left-6 z-20 text-white/60 hover:text-white transition-colors text-sm"
                 style={{ cursor: `url('/styles/galgame/ui/cursor.png'), pointer` }}
             >
                 ← 返回
             </button>
 
+
             {/* Galgame 风格对话框 - 底部 */}
             <div className="absolute bottom-0 left-0 right-0 z-10">
-                {/* 对话内容框 */}
                 <div className="mx-4 mb-4 rounded-2xl px-6 py-5">
-                    {/* 对话者名字 - 边缘白色 */}
                     <div
                         className="text-center mb-1"
                         style={{
@@ -186,7 +201,6 @@ export default function ChatPage() {
                         {currentSpeaker}
                     </div>
 
-                    {/* 对话内容 - 从左到右渐变显示 */}
                     <div
                         className="text-center leading-relaxed min-h-[80px] flex justify-center flex-wrap"
                         style={{
@@ -201,7 +215,7 @@ export default function ChatPage() {
                 </div>
             </div>
 
-            {/* 隐藏的输入框，用于接收用户输入 */}
+            {/* 隐藏的输入框 */}
             <div className="absolute bottom-0 left-0 right-0 opacity-0 pointer-events-auto z-20">
                 <input
                     type="text"
