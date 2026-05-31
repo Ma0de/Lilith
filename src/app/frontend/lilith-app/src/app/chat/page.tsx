@@ -15,7 +15,6 @@ interface Message {
 // 根据说话者和内容匹配表情的简单映射
 const getExpressionBySpeakerAndContent = (speaker: string, content: string): string => {
     if (speaker === '莉莉丝') {
-        // 根据内容关键词匹配表情
         if (content.includes('~')) {
             return 'joyful_laugh';
         }
@@ -42,12 +41,11 @@ export default function ChatPage() {
     const [style, setStyle] = useState<string>('');
     const [waitingForNext, setWaitingForNext] = useState(false);
     const [isSwitching, setIsSwitching] = useState(false);
-    // 设置覆盖窗口状态
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-    // 当前表情
     const [currentExpression, setCurrentExpression] = useState('calm_gentle');
-    // 身体状态
     const [bodyState, setBodyState] = useState<1 | 2>(1);
+    const [waitingForClick, setWaitingForClick] = useState(false);
+    const [showInputBox, setShowInputBox] = useState(false);
 
     useEffect(() => {
         const savedStyle = localStorage.getItem('chatStyle');
@@ -58,7 +56,6 @@ export default function ChatPage() {
         }
     }, [router]);
 
-    // 监听最后一条消息，更新表情
     useEffect(() => {
         const lastMessage = messages[messages.length - 1];
         if (lastMessage) {
@@ -67,10 +64,9 @@ export default function ChatPage() {
         }
     }, [messages]);
 
-    // 从左到右渐变效果
     useEffect(() => {
         const lastMessage = messages[messages.length - 1];
-        if (lastMessage && !isRevealing && !isSwitching) {
+        if (lastMessage && !isRevealing && !isSwitching && !waitingForClick && !showInputBox) {
             startGradientReveal(lastMessage);
         }
     }, [messages]);
@@ -81,6 +77,8 @@ export default function ChatPage() {
         setRevealProgress(0);
         setIsRevealing(true);
         setWaitingForNext(false);
+        setWaitingForClick(false);
+        setShowInputBox(false);
 
         const startTime = Date.now();
         const duration = 600;
@@ -88,66 +86,30 @@ export default function ChatPage() {
         const animate = () => {
             const elapsed = Date.now() - startTime;
             const progress = Math.min(elapsed / duration, 1);
-
             setRevealProgress(progress);
-
             if (progress < 1) {
                 requestAnimationFrame(animate);
             } else {
                 setIsRevealing(false);
                 setIsSwitching(false);
                 setWaitingForNext(true);
+
+                if (message.speaker === '莉莉丝') {
+                    setWaitingForClick(true);
+                }
             }
         };
-
         requestAnimationFrame(animate);
     };
 
-    const handleNextMessage = () => {
-        if (!waitingForNext || isRevealing || isSwitching) return;
-
-        const reply: Message = {
-            id: Date.now(),
-            speaker: '莉莉丝',
-            content: getAutoReplyByStyle(style),
-        };
-        setMessages(prev => [...prev, reply]);
-        setWaitingForNext(false);
-    };
-
-    const getAutoReplyByStyle = (style: string): string => {
-        const replies = [
-            '嗯嗯，我在听呢~',
-            '原来如此呢...',
-            '很有趣的想法！',
-            '莉莉丝也这么觉得哦~',
-            '继续说下去吧~'
-        ];
-        const randomReply = replies[Math.floor(Math.random() * replies.length)];
-        return randomReply;
-    };
-
-    const handleSendMessage = () => {
-        if (!inputText.trim() || isRevealing || waitingForNext || isSwitching) return;
-
-        const userInput = inputText;
-        const newMessage: Message = {
-            id: Date.now(),
-            speaker: '你',
-            content: userInput,
-        };
-        setMessages(prev => [...prev, newMessage]);
-        setInputText('');
-        setWaitingForNext(false);
-
-        setTimeout(() => {
-            const reply: Message = {
-                id: Date.now() + 1,
-                speaker: '莉莉丝',
-                content: getReplyByStyle(userInput, style),
-            };
-            setMessages(prev => [...prev, reply]);
-        }, 500);
+    const handlePlayerTurn = () => {
+        if (!waitingForClick) return;
+        setWaitingForClick(false);
+        setShowInputBox(true);
+        setCurrentRevealingMessage(null);
+        // 清空对话框内容
+        setRevealProgress(0);
+        setIsRevealing(false);
     };
 
     const getReplyByStyle = (input: string, style: string): string => {
@@ -157,43 +119,71 @@ export default function ChatPage() {
         return `「${input}」... 莉莉丝记住了呢～`;
     };
 
+    const handleSendMessage = () => {
+        if (!inputText.trim() || !showInputBox) return;
+
+        const userInput = inputText;
+
+        // 立即清空输入框和显示状态，防止闪烁
+        setInputText('');
+        setShowInputBox(false);
+        setWaitingForClick(false);
+        setWaitingForNext(false);
+        setCurrentRevealingMessage(null);
+        setRevealProgress(0);
+
+        // 直接添加莉莉丝回复
+        const reply: Message = {
+            id: Date.now(),
+            speaker: '莉莉丝',
+            content: getReplyByStyle(userInput, style),
+        };
+        setMessages(prev => [...prev, reply]);
+    };
+
     const currentDisplayMessage = currentRevealingMessage || messages[messages.length - 1];
     const currentSpeaker = currentDisplayMessage?.speaker || '莉莉丝';
     const currentContent = currentDisplayMessage?.content || '';
 
     const renderGradientText = (text: string, progress: number) => {
-        if (progress >= 1) {
-            return text;
-        }
-
         const chars = text.split('');
         const totalChars = chars.length;
+        if (totalChars === 0) return null;
 
-        if (totalChars === 0) return '';
+        const visibleCount = Math.ceil(totalChars * Math.min(progress, 1));
 
         return chars.map((char, index) => {
-            const charPosition = index / totalChars;
-            const opacity = Math.max(0, Math.min(1, (progress - charPosition * 0.7) / 0.3));
-
+            const isVisible = index < visibleCount;
             return (
-                <span
-                    key={index}
-                    style={{
-                        opacity: opacity,
-                        transition: 'opacity 0.1s ease-out',
-                    }}
-                >
-                    {char}
+                <span key={index} style={{ opacity: isVisible ? 1 : 0, transition: 'opacity 0.08s ease-out' }}>
+                    {char === ' ' ? '\u00A0' : char}
                 </span>
             );
         });
     };
 
+    const handleRootClick = (e: React.MouseEvent) => {
+        if (isSettingsOpen) return;
+
+        const target = e.target as HTMLElement;
+        if (target.closest('input') || target.closest('button')) {
+            return;
+        }
+
+        if (waitingForClick) {
+            handlePlayerTurn();
+        }
+    };
+
+    // 当 showInputBox 为 true 时，不显示任何对话内容
+    const shouldShowContent = !showInputBox && currentContent;
+    const displayContent = shouldShowContent ? currentContent : '';
+
     return (
         <div
             className="relative h-screen w-full overflow-hidden bg-black"
             style={{ cursor: `url('/styles/galgame/ui/cursor.png'), auto` }}
-            onClick={!isSettingsOpen ? handleNextMessage : undefined}
+            onClick={handleRootClick}
         >
             {/* 背景图 */}
             <div
@@ -215,6 +205,7 @@ export default function ChatPage() {
                     className="translate-y-170"
                 />
             </div>
+
             {/* 返回按钮 */}
             <button
                 onClick={(e) => {
@@ -227,7 +218,7 @@ export default function ChatPage() {
                 ← 返回
             </button>
 
-            {/* 设置按钮 - 右上角 */}
+            {/* 设置按钮 */}
             <button
                 onClick={(e) => {
                     e.stopPropagation();
@@ -241,8 +232,9 @@ export default function ChatPage() {
             </button>
 
             {/* Galgame 风格对话框 - 底部 */}
-            <div className="absolute bottom-10 left-0 right-0 z-10">
+            <div className="absolute bottom-23 left-0 right-0 z-10">
                 <div className="mx-4 mb-4 rounded-2xl px-6 py-5">
+                    {/* 说话者名称 */}
                     <div
                         className="text-center mb-1"
                         style={{
@@ -252,11 +244,12 @@ export default function ChatPage() {
                             textShadow: '0.5px 0.5px 0 #FFFFFF, -0.5px -0.5px 0 #FFFFFF, 0.5px -0.5px 0 #FFFFFF, -0.5px 0.5px 0 #FFFFFF',
                         }}
                     >
-                        {currentSpeaker}
+                        {showInputBox ? '你' : currentSpeaker}
                     </div>
 
+                    {/* 内容区域 */}
                     <div
-                        className="text-center leading-relaxed min-h-[80px] flex justify-center flex-wrap"
+                        className="text-center leading-relaxed flex justify-center flex-wrap"
                         style={{
                             fontFamily: 'WeiLaiYuan, var(--font-geist-sans)',
                             color: '#FFFFFF',
@@ -264,22 +257,26 @@ export default function ChatPage() {
                             textShadow: '2px 2px 0 #000000, -1px -1px 0 #000000, 1px -1px 0 #000000, -1px 1px 0 #000000',
                         }}
                     >
-                        {renderGradientText(currentContent, revealProgress)}
+                        {showInputBox ? (
+                            <input
+                                type="text"
+                                value={inputText}
+                                onChange={(e) => setInputText(e.target.value)}
+                                onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
+                                placeholder="点击这里输入..."
+                                className="w-full bg-transparent text-white text-center outline-none"
+                                style={{
+                                    fontSize: '1.25rem',
+                                    fontFamily: 'WeiLaiYuan, var(--font-geist-sans)',
+                                    letterSpacing: '2px',
+                                }}
+                                autoFocus
+                            />
+                        ) : (
+                            renderGradientText(displayContent, revealProgress)
+                        )}
                     </div>
                 </div>
-            </div>
-
-            {/* 隐藏的输入框 */}
-            <div className="absolute bottom-0 left-0 right-0 opacity-0 pointer-events-auto z-20">
-                <input
-                    type="text"
-                    value={inputText}
-                    onChange={(e) => setInputText(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
-                    className="w-full p-4 bg-transparent outline-none"
-                    style={{ cursor: `url('/styles/galgame/ui/cursor.png') 16 16, auto` }}
-                    autoFocus
-                />
             </div>
 
             {/* 全屏设置覆盖窗口 */}
