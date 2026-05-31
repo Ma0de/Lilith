@@ -71,7 +71,6 @@ class WebSocketClient {
             
             // 自动重连
             if (this.shouldReconnect && event.code !== 1000) {
-                console.log('3秒后尝试重连...');
                 this.reconnectTimer = setTimeout(() => {
                     this.connect();
                 }, 3000);
