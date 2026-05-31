@@ -2,6 +2,8 @@
 
 import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
+import { Settings } from 'lucide-react';
+import SettingsOverlay from '@/components/SettingsOverlay';
 
 interface Message {
     id: number;
@@ -20,8 +22,9 @@ export default function ChatPage() {
     const [currentRevealingMessage, setCurrentRevealingMessage] = useState<Message | null>(null);
     const [style, setStyle] = useState<string>('');
     const [waitingForNext, setWaitingForNext] = useState(false);
-    // 添加一个标志来标记是否正在切换消息
     const [isSwitching, setIsSwitching] = useState(false);
+    // 设置覆盖窗口状态
+    const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
     useEffect(() => {
         const savedStyle = localStorage.getItem('chatStyle');
@@ -36,13 +39,11 @@ export default function ChatPage() {
     useEffect(() => {
         const lastMessage = messages[messages.length - 1];
         if (lastMessage && !isRevealing && !isSwitching) {
-            // 只有当不是正在切换状态时才启动新的渐变
             startGradientReveal(lastMessage);
         }
     }, [messages]);
 
     const startGradientReveal = (message: Message) => {
-        // 立即设置切换状态和新的消息，防止闪现旧内容
         setIsSwitching(true);
         setCurrentRevealingMessage(message);
         setRevealProgress(0);
@@ -55,9 +56,9 @@ export default function ChatPage() {
         const animate = () => {
             const elapsed = Date.now() - startTime;
             const progress = Math.min(elapsed / duration, 1);
-            
+
             setRevealProgress(progress);
-            
+
             if (progress < 1) {
                 requestAnimationFrame(animate);
             } else {
@@ -72,7 +73,7 @@ export default function ChatPage() {
 
     const handleNextMessage = () => {
         if (!waitingForNext || isRevealing || isSwitching) return;
-        
+
         const reply: Message = {
             id: Date.now(),
             speaker: '测试',
@@ -124,7 +125,6 @@ export default function ChatPage() {
         return `「${input}」... 莉莉丝记住了呢～ ✨`;
     };
 
-    // 确保在切换期间使用新消息，避免闪现
     const currentDisplayMessage = currentRevealingMessage || messages[messages.length - 1];
     const currentSpeaker = currentDisplayMessage?.speaker || '莉莉丝';
     const currentContent = currentDisplayMessage?.content || '';
@@ -136,13 +136,13 @@ export default function ChatPage() {
 
         const chars = text.split('');
         const totalChars = chars.length;
-        
+
         if (totalChars === 0) return '';
 
         return chars.map((char, index) => {
             const charPosition = index / totalChars;
             const opacity = Math.max(0, Math.min(1, (progress - charPosition * 0.7) / 0.3));
-            
+
             return (
                 <span
                     key={index}
@@ -158,7 +158,7 @@ export default function ChatPage() {
     };
 
     return (
-        <div 
+        <div
             className="relative h-screen w-full overflow-hidden bg-black"
             style={{ cursor: `url('/styles/galgame/ui/cursor.png'), auto` }}
             onClick={handleNextMessage}
@@ -167,7 +167,7 @@ export default function ChatPage() {
             <div
                 className="absolute inset-0 opacity-40"
                 style={{
-                    backgroundImage: "url('/styles/galgame/bg/TitleMenu_Image_Bg2.png')",
+                    backgroundImage: "url('/Scene/Scence_10_2.png')",
                     backgroundSize: 'cover',
                     backgroundPosition: 'center',
                 }}
@@ -185,6 +185,18 @@ export default function ChatPage() {
                 ← 返回
             </button>
 
+            {/* 设置按钮 - 右上角 */}
+            <button
+                onClick={(e) => {
+                    e.stopPropagation();
+                    setIsSettingsOpen(true);
+                }}
+                className="absolute top-6 right-6 z-20 text-white/60 hover:text-white transition-colors p-2 rounded-full hover:bg-white/10"
+                style={{ cursor: `url('/styles/galgame/ui/cursor.png'), pointer` }}
+                aria-label="设置"
+            >
+                <Settings size={22} />
+            </button>
 
             {/* Galgame 风格对话框 - 底部 */}
             <div className="absolute bottom-0 left-0 right-0 z-10">
@@ -227,6 +239,12 @@ export default function ChatPage() {
                     autoFocus
                 />
             </div>
+
+            {/* 全屏设置覆盖窗口 */}
+            <SettingsOverlay
+                isOpen={isSettingsOpen}
+                onClose={() => setIsSettingsOpen(false)}
+            />
         </div>
     );
 }
