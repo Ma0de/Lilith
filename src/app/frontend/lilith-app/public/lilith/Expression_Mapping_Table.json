@@ -1,0 +1,546 @@
+[
+    {
+        "info": "该表是一个表情映射表，包含了40个不同的表情，每个表情都对应一个图片文件名、一个情绪标签、一个详细的描述，以及眼睛和嘴巴的具体表现形式"
+    },
+    [
+        {
+            "file_name": "Lilithemo_1.png",
+            "emotion": "calm_gentle",
+            "description": "眼神平静，眉形柔和，嘴角带着微笑",
+            "eyes": "open_red_soft",
+            "mouth": "gentle_smile"
+        },
+        {
+            "file_name": "Lilithemo_2.png",
+            "emotion": "pout_playful",
+            "description": "眉毛微皱并上扬，眼神带着不满但并无敌意，嘴巴紧闭呈小弧线，像是在闹别扭或撒娇",
+            "eyes": "open_red_pout",
+            "mouth": "pout_line"
+        },
+        {
+            "file_name": "Lilithemo_3.png",
+            "emotion": "confident_laugh",
+            "description": "眼神明亮聚焦，眉毛微挑，嘴巴张开呈三角形，露出自信或开朗的笑容",
+            "eyes": "open_red_alert",
+            "mouth": "open_smile"
+        },
+        {
+            "file_name": "Lilithemo_4.png",
+            "emotion": "neutral_slight_upset",
+            "description": "眼神平淡，眼皮略微下垂，嘴巴微张并呈小弧线，看起来有一丝无奈或轻叹",
+            "eyes": "open_red_neutral",
+            "mouth": "slight_sigh"
+        },
+        {
+            "file_name": "Lilithemo_5.png",
+            "emotion": "serious_deadpan",
+            "description": "眼神专注，眉毛微微下压，嘴巴紧闭呈一条平线，表情严肃且毫无波澜",
+            "eyes": "open_red_focused",
+            "mouth": "straight_line"
+        },
+        {
+            "file_name": "Lilithemo_6.png",
+            "emotion": "smug_playful",
+            "description": "眼神微微眯起，眉尾上扬，嘴角上扬呈小弧线，带着一抹得意的浅笑",
+            "eyes": "half_closed_red",
+            "mouth": "slight_smirk"
+        },
+        {
+            "file_name": "Lilithemo_7.png",
+            "emotion": "joyful_laugh",
+            "description": "双眼紧闭呈月牙状，眉毛舒展，嘴巴张开并大笑，展现出纯粹的开心",
+            "eyes": "closed_happy",
+            "mouth": "wide_laugh"
+        },
+        {
+            "file_name": "Lilithemo_8.png",
+            "emotion": "peaceful_sleeping",
+            "description": "双眼紧闭，眉形放松舒展，嘴巴微张呈小点状，像是正在安睡或闭目养神",
+            "eyes": "closed_peaceful",
+            "mouth": "small_open"
+        },
+        {
+            "file_name": "Lilithemo_9.png",
+            "emotion": "surprised_slight",
+            "description": "眼睛睁大，瞳孔聚焦，眉毛微挑，嘴巴张开呈小圆点状，露出微微惊讶的神情",
+            "eyes": "open_red_wide",
+            "mouth": "small_o"
+        },
+        {
+            "file_name": "Lilithemo_10.png",
+            "emotion": "gentle_smile_closed",
+            "description": "双眼紧闭呈柔和的月牙状，眉毛舒展，嘴角带着浅浅的温柔微笑，显得恬静可爱",
+            "eyes": "closed_gentle",
+            "mouth": "soft_smile"
+        },
+        {
+            "file_name": "Lilithemo_11.png",
+            "emotion": "cheerful_laughing",
+            "description": "双眼紧闭呈开心的月牙状，嘴巴张开呈倒三角形，展现出灿烂开朗的笑容",
+            "eyes": "closed_joyful",
+            "mouth": "happy_open"
+        },
+        {
+            "file_name": "Lilithemo_12.png",
+            "emotion": "upset_whimper",
+            "description": "八字眉，眉头微蹙且上扬，眼神低垂显得楚楚可怜，嘴角微微下垂呈扁平状，显得委屈或要哭的样子",
+            "eyes": "open_red_sad",
+            "mouth": "flat_line"
+        },
+        {
+            "file_name": "Lilithemo_13.png",
+            "emotion": "blank_dazed",
+            "description": "眼神稍显失焦或向下，眼皮略微放松，嘴角紧闭呈短平线",
+            "eyes": "open_red_blank",
+            "mouth": "short_line"
+        },
+        {
+            "file_name": "Lilithemo_14.png",
+            "emotion": "calm_gentle",
+            "description": "眼神平静温和，嘴角带着浅浅的微笑，神态放松",
+            "eyes": "open_red_soft",
+            "mouth": "gentle_smile"
+        },
+        {
+            "file_name": "Lilithemo_15.png",
+            "emotion": "serious_deadpan",
+            "description": "八子眉，眼睛闭成一条线，右眼带泪，嘴巴向下微弯",
+            "eyes": "closed_tear",
+            "mouth": "straight_line"
+        },
+        {
+            "file_name": "Lilithemo_16.png",
+            "emotion": "smug_playful",
+            "description": "眼神微眯，嘴角带着一丝玩味的笑意，显得自信或得意",
+            "eyes": "half_closed_red",
+            "mouth": "slight_smirk"
+        },
+        {
+            "file_name": "Lilithemo_17.png",
+            "emotion": "pout_playful",
+            "description": "眉头扬起，眼神略有一些震惊，嘴巴闭合，像是听到不得了的事",
+            "eyes": "open_red_raised",
+            "mouth": "pout_line"
+        },
+        {
+            "file_name": "Lilithemo_18.png",
+            "emotion": "slight_surprise_talking",
+            "description": "眼神认真注视，嘴巴微张呈小圆状，像是在说话，或对某事感到一丝意外",
+            "eyes": "open_red_focused",
+            "mouth": "small_o"
+        },
+        {
+            "file_name": "Lilithemo_19.png",
+            "emotion": "neutral_slight_upset",
+            "description": "眼神平淡下垂，嘴巴微扬，表情略带无奈",
+            "eyes": "open_red_neutral",
+            "mouth": "slight_sigh"
+        },
+        {
+            "file_name": "Lilithemo_20.png",
+            "emotion": "confident_smile",
+            "description": "眼神自信，嘴角明显上扬张开，带着开朗或得意的笑容",
+            "eyes": "open_red_alert",
+            "mouth": "open_smile"
+        },
+        {
+            "file_name": "Lilithemo_21.png",
+            "emotion": "calm_gentle",
+            "description": "眼神柔和平静，眉毛舒展，嘴角微微上扬带着笑意",
+            "eyes": "open_red_soft",
+            "mouth": "gentle_smile"
+        },
+        {
+            "file_name": "Lilithemo_22.png",
+            "emotion": "joyful_laugh",
+            "description": "双眼紧闭呈月牙状，嘴巴张开呈倒三角，展现出开心灿烂的笑容",
+            "eyes": "closed_happy",
+            "mouth": "wide_laugh"
+        },
+        {
+            "file_name": "Lilithemo_23.png",
+            "emotion": "talking_normal",
+            "description": "眼神专注平和，嘴巴微张呈小三角形，像是正在从容地说话",
+            "eyes": "open_red_soft",
+            "mouth": "talking_small"
+        },
+        {
+            "file_name": "Lilithemo_24.png",
+            "emotion": "gentle_smile_closed",
+            "description": "双眼闭合呈柔和的弧线，嘴角带着浅浅的温柔微笑",
+            "eyes": "closed_gentle",
+            "mouth": "soft_smile"
+        },
+        {
+            "file_name": "Lilithemo_25.png",
+            "emotion": "gentle_smile_closed",
+            "description": "双眼闭合呈柔和的弧线，嘴角带着温柔的笑意，表情恬静放松",
+            "eyes": "closed_gentle",
+            "mouth": "soft_smile"
+        },
+        {
+            "file_name": "Lilithemo_26.png",
+            "emotion": "confident_playful",
+            "description": "眼神自信且略带锐利，眉毛微挑，嘴角微微上扬，显得得意",
+            "eyes": "open_red_alert",
+            "mouth": "slight_smile"
+        },
+        {
+            "file_name": "Lilithemo_27.png",
+            "emotion": "calm_confident",
+            "description": "眼神平静且锐利，眉毛舒展，嘴角带着淡淡的微笑，显得从容自信",
+            "eyes": "open_red_alert",
+            "mouth": "gentle_smile"
+        },
+        {
+            "file_name": "Lilithemo_28.png",
+            "emotion": "knowing_smile",
+            "description": "眼神向下呈半圆状，眼内为纯色无高光，嘴角带着浅浅的笑意，显得看穿一切或从容淡定",
+            "eyes": "half_closed_pure",
+            "mouth": "gentle_smile"
+        },
+        {
+            "file_name": "Lilithemo_29.png",
+            "emotion": "serious_deadpan",
+            "description": "眼神集中，表情冷淡，嘴巴紧闭，显得非常认真",
+            "eyes": "open_red_serious",
+            "mouth": "straight_line"
+        },
+        {
+            "file_name": "Lilithemo_30.png",
+            "emotion": "neutral_flat",
+            "description": "眼神平静且略微空洞，嘴巴微张，表情呆板，看起来有些失望或无奈",
+            "eyes": "open_red_blank",
+            "mouth": "small_o"
+        },
+        {
+            "file_name": "Lilithemo_31.png",
+            "emotion": "slight_surprise",
+            "description": "眼睛睁大，嘴巴微微张开呈小圆，显得有一丝惊讶",
+            "eyes": "open_red_wide",
+            "mouth": "small_o"
+        },
+        {
+            "file_name": "Lilithemo_32.png",
+            "emotion": "surprised_shocked",
+            "description": "眼睛明显睁大，嘴巴张开呈圆，露出很惊讶或意外的表情",
+            "eyes": "open_red_wide",
+            "mouth": "open_o"
+        },
+        {
+            "file_name": "Lilithemo_33.png",
+            "emotion": "determined",
+            "description": "眼神坚定，眉毛下压，嘴巴张开，显示出决心或执念，看起来正在争辩什么",
+            "eyes": "open_red_serious",
+            "mouth": "straight_line"
+        },
+        {
+            "file_name": "Lilithemo_34.png",
+            "emotion": "slight_upset_neutral",
+            "description": "眼神略微低垂，嘴巴紧闭，看似不太满意、稍有失落、惊讶",
+            "eyes": "open_red_sad",
+            "mouth": "straight_line"
+        },
+        {
+            "file_name": "Lilithemo_35.png",
+            "emotion": "closed_eyes_talking",
+            "description": "双眼温柔闭合，嘴唇微张呈小圆，像是正在轻声细语地哼唱",
+            "eyes": "closed_gentle",
+            "mouth": "small_o"
+        },
+        {
+            "file_name": "Lilithemo_36.png",
+            "emotion": "pout_slight",
+            "description": "眼神向下，嘴巴紧闭呈微抿状，显得有些委屈或闹别扭",
+            "eyes": "open_red_down",
+            "mouth": "pout_line"
+        },
+        {
+            "file_name": "Lilithemo_37.png",
+            "emotion": "neutral",
+            "description": "眼睛闭合，嘴巴闭合，表情委屈又有些无助",
+            "eyes": "closed_neutral",
+            "mouth": "straight_line"
+        },
+        {
+            "file_name": "Lilithemo_38.png",
+            "emotion": "confused_upset",
+            "description": "眼神微微下垂且带有一丝忧虑，眉毛微蹙，嘴巴微张呈小圆，显得困惑又有些委屈",
+            "eyes": "open_red_down",
+            "mouth": "small_o"
+        },
+        {
+            "file_name": "Lilithemo_39.png",
+            "emotion": "worried_upset",
+            "description": "眉毛微蹙上扬呈八字形，眼神低垂，嘴巴微张呈小圆，显得担忧、委屈或楚楚可怜",
+            "eyes": "open_red_sad",
+            "mouth": "small_o"
+        },
+        {
+            "file_name": "Lilithemo_40.png",
+            "emotion": "displeasure",
+            "description": "眼神向下，嘴巴紧闭，表情流露出些许不悦与无奈",
+            "eyes": "open_red_down",
+            "mouth": "straight_line"
+        },
+        {
+            "file_name": "Lilithemo_41.png",
+            "emotion": "upset_whimper",
+            "description": "眼神低垂，眉毛呈八字形，嘴巴紧闭呈短平线，显得委屈或可怜",
+            "eyes": "open_red_down",
+            "mouth": "straight_line_short"
+        },
+        {
+            "file_name": "Lilithemo_42.png",
+            "emotion": "defensive_surprise",
+            "description": "眼睛睁大微蹙，嘴巴张开呈小圆，像是在辩解或感到惊讶",
+            "eyes": "open_red_wide",
+            "mouth": "small_o"
+        },
+        {
+            "file_name": "Lilithemo_43.png",
+            "emotion": "misunderstood_talking",
+            "description": "眼神低垂，眉毛呈八字形，嘴巴张开呈小圆，显得像是被误会了想要解释，带着惊讶和委屈",
+            "eyes": "open_red_down",
+            "mouth": "small_o"
+        },
+        {
+            "file_name": "Lilithemo_44.png",
+            "emotion": "resigned_gentle",
+            "description": "眼神柔和，嘴角带着淡淡的笑意，显得无奈且温和",
+            "eyes": "open_red_soft",
+            "mouth": "gentle_smile"
+        },
+        {
+            "file_name": "Lilithemo_45.png",
+            "emotion": "helpless_smile",
+            "description": "双眼闭合呈月牙状，嘴角带着笑意，显得有些无奈却又不失温柔",
+            "eyes": "closed_happy",
+            "mouth": "smile_line"
+        },
+        {
+            "file_name": "Lilithemo_46.png",
+            "emotion": "resigned_smile",
+            "description": "眼神略微低垂，嘴角带着浅浅的弧度，透出一丝无奈或妥协的苦笑",
+            "eyes": "open_red_soft_down",
+            "mouth": "gentle_smile"
+        },
+        {
+            "file_name": "Lilithemo_47.png",
+            "emotion": "tired_resigned",
+            "description": "眼神低垂，眼皮微松，嘴角紧闭呈平线，显得有些疲惫与无奈",
+            "eyes": "half_closed_down",
+            "mouth": "straight_line_short"
+        },
+        {
+            "file_name": "Lilithemo_48.png",
+            "emotion": "bitter_smile",
+            "description": "双眼闭合呈弧线，嘴巴微张呈三角形，嘴角上扬，露出带有无奈或苦涩的笑容",
+            "eyes": "closed_arcs",
+            "mouth": "open_small_triangle"
+        },
+        {
+            "file_name": "Lilithemo_49.png",
+            "emotion": "serious_displeased",
+            "description": "眼神锐利，眉毛下压，嘴巴紧闭呈直线，表情严肃且带有几分不悦",
+            "eyes": "open_red_sharp",
+            "mouth": "straight_line"
+        },
+        {
+            "file_name": "Lilithemo_50.png",
+            "emotion": "focused_slight_annoyance",
+            "description": "眼神专注，眉毛微压，嘴巴微张，看起来在思考某事，或者对某事有些不满",
+            "eyes": "open_red_focused",
+            "mouth": "small_o"
+        },
+        {
+            "file_name": "Lilithemo_51.png",
+            "emotion": "serious_neutral",
+            "description": "眼神专注，眉毛下压，嘴巴紧闭，表情严肃中带着冷淡",
+            "eyes": "open_red_focused",
+            "mouth": "straight_line"
+        },
+        {
+            "file_name": "Lilithemo_52.png",
+            "emotion": "intense_opposition",
+            "description": "眼神非常锐利，眉毛下压，嘴巴张开呈圆，正在大声讲话或表达强烈反对意见",
+            "eyes": "open_red_sharp",
+            "mouth": "small_o"
+        },
+        {
+            "file_name": "Lilithemo_53.png",
+            "emotion": "skeptical_inquiring",
+            "description": "眉毛微压，眼神锐利，嘴巴呈小圆，像是在提出质疑或审视某事",
+            "eyes": "open_red_sharp",
+            "mouth": "small_o"
+        },
+        {
+            "file_name": "Lilithemo_54.png",
+            "emotion": "playful_doubt",
+            "description": "眼睛半闭，目光微斜，嘴巴紧闭呈小倒V形，带着一点傲娇和不屑的表情，仿佛在说‘我才不信呢’",
+            "eyes": "half_closed_pure_side",
+            "mouth": "small_tsundere_v"
+        },
+        {
+            "file_name": "Lilithemo_55.png",
+            "emotion": "misunderstood_sigh",
+            "description": "眉毛呈八字形，眼神低垂，嘴巴紧闭呈短横线，显得有些失落和无奈，仿佛在叹息‘你不懂我’",
+            "eyes": "open_red_down",
+            "mouth": "straight_line_short"
+        },
+        {
+            "file_name": "Lilithemo_56.png",
+            "emotion": "calm_talking",
+            "description": "眼神平静柔和，嘴巴微张呈小圆，像是在平静地说话",
+            "eyes": "open_red_soft",
+            "mouth": "small_o"
+        },
+        {
+            "file_name": "Lilithemo_57.png",
+            "emotion": "serious_closed",
+            "description": "双眼闭合，嘴唇紧闭呈短横线，表情严肃，像是在郑重说明一件事，或是有一点赌气",
+            "eyes": "closed_serious",
+            "mouth": "straight_line_short"
+        },
+        {
+            "file_name": "Lilithemo_58.png",
+            "emotion": "annoyed_glare",
+            "description": "眼神锐利，眉毛下压，嘴巴紧闭呈短线，显得有些不悦或正在审视对方",
+            "eyes": "open_red_sharp",
+            "mouth": "straight_line_short"
+        },
+        {
+            "file_name": "Lilithemo_59.png",
+            "emotion": "serious",
+            "description": "眼神锐利，眉毛下压，嘴巴紧闭，表情严肃",
+            "eyes": "open_red_focused",
+            "mouth": "straight_line"
+        },
+        {
+            "file_name": "Lilithemo_60.png",
+            "emotion": "closed_eyes_talking",
+            "description": "双眼闭合，嘴巴微张呈小圆，像是在轻声说话、叹气或发出声音",
+            "eyes": "closed",
+            "mouth": "small_o"
+        },
+        {
+            "file_name": "Lilithemo_61.png",
+            "emotion": "serious_focused",
+            "description": "眼神非常锐利，眉毛下压，嘴巴紧闭，显得极度专注或严肃思考某事",
+            "eyes": "open_red_sharp",
+            "mouth": "straight_line"
+        },
+        {
+            "file_name": "Lilithemo_62.png",
+            "emotion": "displeased",
+            "description": "眼神微眯且锐利，眉毛下压，嘴巴呈小圆，显得不悦",
+            "eyes": "narrowed_sharp",
+            "mouth": "small_o"
+        },
+        {
+            "file_name": "Lilithemo_63.png",
+            "emotion": "reluctant",
+            "description": "眼神低垂，嘴巴微张呈向下的小弧线，显得有些被动、不情愿或闹别扭",
+            "eyes": "open_red_down",
+            "mouth": "downward_short_line"
+        },
+        {
+            "file_name": "Lilithemo_64.png",
+            "emotion": "unimpressed",
+            "description": "眼神半睁向下，瞳孔为纯色，嘴巴微张呈小圆，显得不以为然或有些失望，像是‘什么嘛，原来只是这样’的感觉",
+            "eyes": "half_closed_pure_down",
+            "mouth": "small_o"
+        },
+        {
+            "file_name": "Lilithemo_65.png",
+            "emotion": "questioning",
+            "description": "眼神上扬且聚焦，眉头微挑，嘴巴微张呈小圆，像是在反问或质疑‘你确定吗？’",
+            "eyes": "open_red_focused",
+            "mouth": "small_o"
+        },
+        {
+            "file_name": "Lilithemo_66.png",
+            "emotion": "uncertain_thinking",
+            "description": "眼神锐利却带着犹豫，嘴巴微张呈小圆，像是在边思考边说话，‘我确定吗...我也不清楚’",
+            "eyes": "open_red_sharp",
+            "mouth": "small_o"
+        },
+        {
+            "file_name": "Lilithemo_67.png",
+            "emotion": "resigned_acceptance",
+            "description": "双眼闭合，嘴角呈一条短平线，带着无奈接受现实的味道，像在说‘好吧，如果真的是这样的话’",
+            "eyes": "closed",
+            "mouth": "straight_line_short"
+        },
+        {
+            "file_name": "Lilithemo_68.png",
+            "emotion": "challenging",
+            "description": "眼神锐利，眉头微压，嘴巴紧闭呈一条平线，带着审视的意味",
+            "eyes": "open_red_sharp",
+            "mouth": "straight_line_short"
+        },
+        {
+            "file_name": "Lilithemo_69.png",
+            "emotion": "disdainful_sigh",
+            "description": "眼神半闭下垂，瞳孔呈纯色，嘴巴微张呈小倒V形，带着轻蔑或不屑的神情，像是在说‘切，什么嘛，就这啊’",
+            "eyes": "half_closed_pure_down",
+            "mouth": "small_annoyed_v"
+        },
+        {
+            "file_name": "Lilithemo_70.png",
+            "emotion": "serious",
+            "description": "眼神锐利，眉毛下压，嘴巴紧闭，表情严肃",
+            "eyes": "open_red_focused",
+            "mouth": "straight_line"
+        },
+        {
+            "file_name": "Lilithemo_71.png",
+            "emotion": "disgust_talking",
+            "description": "眼神锐利，眉头微蹙，嘴巴微张呈小圆，像是在嫌弃地说话或反驳",
+            "eyes": "open_red_sharp",
+            "mouth": "small_o"
+        },
+        {
+            "file_name": "Lilithemo_72.png",
+            "emotion": "shocked_offended",
+            "description": "眼睛睁大，眉头紧锁，嘴巴微张呈小圆，像是看到了离谱的东西，震惊地质问‘哈？！你给我看了什么东西啊！’",
+            "eyes": "open_red_wide_raised_brows",
+            "mouth": "small_o"
+        },
+        {
+            "file_name": "Lilithemo_73.png",
+            "emotion": "skeptical_irritated",
+            "description": "眼神锐利，眉头下压，嘴巴微张呈小圆，带着质问和不满，像是在说‘Huh？这就是你说的XX？这算什么东西？’",
+            "eyes": "open_red_sharp",
+            "mouth": "small_o"
+        },
+        {
+            "file_name": "Lilithemo_74.png",
+            "emotion": "critical_amazement",
+            "description": "眼神锐利专注，眉头紧锁，嘴巴张开呈倒U型，带着惊讶与批评的态度，像是在争辩",
+            "eyes": "open_red_sharp",
+            "mouth": "open_critical"
+        },
+        {
+            "file_name": "Lilithemo_75.png",
+            "emotion": "serene",
+            "description": "双眼温和闭合，嘴角呈短横线，表情平静安详，像是正在闭目养神或小憩",
+            "eyes": "closed_gentle",
+            "mouth": "straight_line_short"
+        },
+        {
+            "file_name": "Lilithemo_76.png",
+            "emotion": "defeated_sigh",
+            "description": "眼神锐利且略微低垂，嘴巴微张呈小圆，像是在疲惫地叹气，‘我早就该想到的，事已至此…’",
+            "eyes": "open_red_sharp",
+            "mouth": "small_o"
+        },
+        {
+            "file_name": "Lilithemo_77.png",
+            "emotion": "gentle_inquiry",
+            "description": "眼神柔和，眉毛舒展，嘴巴微张呈小圆，像是在温和地提问，‘嗯？你还有更好的解决方案吗？’",
+            "eyes": "open_red_soft",
+            "mouth": "small_o"
+        }
+    ]
+]
