@@ -152,7 +152,12 @@ export default function SettingsOverlay({ isOpen, onClose }: SettingsOverlayProp
     const progress = isRevealing ? revealProgress : 1;
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-hidden">
+        <div
+            className="fixed inset-0 z-50 flex items-center justify-center overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
+            onMouseUp={(e) => e.stopPropagation()}
+        >
             {/* 背景图 */}
             <div
                 className="absolute inset-0"
