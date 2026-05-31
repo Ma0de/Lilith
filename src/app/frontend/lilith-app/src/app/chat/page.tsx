@@ -3,8 +3,10 @@
 import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { Settings } from 'lucide-react';
+import Image from 'next/image';
 import SettingsOverlay from '@/components/SettingsOverlay';
 import LilithPortrait from '@/components/LilithPortrait';
+import { getWebSocketClient } from '@/lib/websocket';
 
 interface Message {
     id: number;
@@ -12,7 +14,6 @@ interface Message {
     content: string;
 }
 
-// 根据说话者和内容匹配表情的简单映射
 const getExpressionBySpeakerAndContent = (speaker: string, content: string): string => {
     if (speaker === '莉莉丝') {
         if (content.includes('~')) {
@@ -46,6 +47,61 @@ export default function ChatPage() {
     const [bodyState, setBodyState] = useState<1 | 2>(1);
     const [waitingForClick, setWaitingForClick] = useState(false);
     const [showInputBox, setShowInputBox] = useState(false);
+    const [isLoading, setIsLoading] = useState(false);
+    const [shouldShowMessage, setShouldShowMessage] = useState(false);
+    const [isInitialized, setIsInitialized] = useState(false);
+    const wsClientRef = useRef<ReturnType<typeof getWebSocketClient> | null>(null);
+    const messagesRef = useRef(messages);
+
+    // 保持 messagesRef 同步
+    useEffect(() => {
+        messagesRef.current = messages;
+    }, [messages]);
+
+    // WebSocket 连接
+    useEffect(() => {
+        const client = getWebSocketClient();
+        wsClientRef.current = client;
+
+        client.onOpen = () => {
+            console.log('WebSocket 连接成功回调');
+        };
+
+        client.onClose = () => {
+            console.log('WebSocket 断开回调');
+        };
+
+        client.onError = (error) => {
+            console.error('WebSocket 错误回调:', error);
+        };
+
+        const removeHandler = client.onMessage((data) => {
+            console.log('收到消息:', data);
+
+            if (data.type === 'chat' && data.speaker === 'lilith') {
+                const reply: Message = {
+                    id: Date.now(),
+                    speaker: '莉莉丝',
+                    content: data.content,
+                };
+                
+                console.log('添加回复消息:', reply);
+                setMessages(prev => [...prev, reply]);
+                setIsLoading(false);
+                setShouldShowMessage(true);
+            }
+        });
+
+        client.connect();
+
+        return () => {
+            console.log('组件卸载，移除消息处理器');
+            removeHandler();
+            client.onOpen = null;
+            client.onClose = null;
+            client.onError = null;
+        };
+    }, []);
 
     useEffect(() => {
         const savedStyle = localStorage.getItem('chatStyle');
@@ -64,81 +120,132 @@ export default function ChatPage() {
         }
     }, [messages]);
 
+    // ✅ 添加初始消息的显示逻辑
     useEffect(() => {
-        const lastMessage = messages[messages.length - 1];
-        if (lastMessage && !isRevealing && !isSwitching && !waitingForClick && !showInputBox) {
-            startGradientReveal(lastMessage);
-        }
-    }, [messages]);
-
-    const startGradientReveal = (message: Message) => {
-        setIsSwitching(true);
-        setCurrentRevealingMessage(message);
-        setRevealProgress(0);
-        setIsRevealing(true);
-        setWaitingForNext(false);
-        setWaitingForClick(false);
-        setShowInputBox(false);
-
-        const startTime = Date.now();
-        const duration = 600;
-
-        const animate = () => {
-            const elapsed = Date.now() - startTime;
-            const progress = Math.min(elapsed / duration, 1);
-            setRevealProgress(progress);
-            if (progress < 1) {
-                requestAnimationFrame(animate);
-            } else {
-                setIsRevealing(false);
-                setIsSwitching(false);
-                setWaitingForNext(true);
-
-                if (message.speaker === '莉莉丝') {
+        if (!isInitialized && messages.length > 0) {
+            console.log('初始化显示第一条消息');
+            setIsInitialized(true);
+            
+            const firstMessage = messages[0];
+            setCurrentRevealingMessage(firstMessage);
+            setRevealProgress(0);
+            setIsRevealing(true);
+            setIsSwitching(true);
+            
+            const startTime = Date.now();
+            const duration = 600;
+            
+            const animate = () => {
+                const elapsed = Date.now() - startTime;
+                const progress = Math.min(elapsed / duration, 1);
+                setRevealProgress(progress);
+                
+                if (progress < 1) {
+                    requestAnimationFrame(animate);
+                } else {
+                    console.log('初始消息显示完成');
+                    setIsRevealing(false);
+                    setIsSwitching(false);
+                    setWaitingForNext(true);
                     setWaitingForClick(true);
                 }
+            };
+            
+            requestAnimationFrame(animate);
+        }
+    }, [messages, isInitialized]);
+
+    // 处理新消息显示（WebSocket 回复）
+    useEffect(() => {
+        if (shouldShowMessage) {
+            const lastMessage = messagesRef.current[messagesRef.current.length - 1];
+            if (lastMessage) {
+                console.log('开始显示新消息:', lastMessage.content);
+                
+                // 重置状态
+                setShowInputBox(false);
+                setWaitingForClick(false);
+                setWaitingForNext(false);
+                
+                // 触发显示动画
+                setCurrentRevealingMessage(lastMessage);
+                setRevealProgress(0);
+                setIsRevealing(true);
+                setIsSwitching(true);
+                
+                setShouldShowMessage(false);
+                
+                const startTime = Date.now();
+                const duration = 600;
+                
+                const animate = () => {
+                    const elapsed = Date.now() - startTime;
+                    const progress = Math.min(elapsed / duration, 1);
+                    setRevealProgress(progress);
+                    
+                    if (progress < 1) {
+                        requestAnimationFrame(animate);
+                    } else {
+                        console.log('消息显示完成');
+                        setIsRevealing(false);
+                        setIsSwitching(false);
+                        setWaitingForNext(true);
+                        
+                        if (lastMessage.speaker === '莉莉丝') {
+                            setWaitingForClick(true);
+                        }
+                    }
+                };
+                
+                requestAnimationFrame(animate);
             }
-        };
-        requestAnimationFrame(animate);
-    };
+        }
+    }, [shouldShowMessage]);
 
     const handlePlayerTurn = () => {
         if (!waitingForClick) return;
         setWaitingForClick(false);
         setShowInputBox(true);
         setCurrentRevealingMessage(null);
-        // 清空对话框内容
         setRevealProgress(0);
         setIsRevealing(false);
-    };
-
-    const getReplyByStyle = (input: string, style: string): string => {
-        if (style === 'Galgame') {
-            return `「${input}」... 嗯，莉莉丝收到啦～`;
-        }
-        return `「${input}」... 莉莉丝记住了呢～`;
     };
 
     const handleSendMessage = () => {
         if (!inputText.trim() || !showInputBox) return;
 
         const userInput = inputText;
+        console.log('发送消息:', userInput);
 
-        // 立即清空输入框和显示状态，防止闪烁
+        // 添加用户消息到列表
+        const userMessage: Message = {
+            id: Date.now(),
+            speaker: '你',
+            content: userInput,
+        };
+        setMessages(prev => [...prev, userMessage]);
+        
         setInputText('');
         setShowInputBox(false);
         setWaitingForClick(false);
         setWaitingForNext(false);
         setCurrentRevealingMessage(null);
         setRevealProgress(0);
+        setIsLoading(true);
 
-        // 直接添加莉莉丝回复
-        const reply: Message = {
-            id: Date.now(),
-            speaker: '莉莉丝',
-            content: getReplyByStyle(userInput, style),
-        };
-        setMessages(prev => [...prev, reply]);
+        // 通过 WebSocket 发送消息到后端
+        const client = wsClientRef.current;
+        if (client) {
+            if (!client.isConnected()) {
+                console.log('WebSocket 未连接，尝试重新连接...');
+                client.connect();
+                setTimeout(() => {
+                    client.send('chat', userInput, 'user');
+                }, 1000);
+            } else {
+                client.send('chat', userInput, 'user');
+            }
+        }
     };
 
     const currentDisplayMessage = currentRevealingMessage || messages[messages.length - 1];
@@ -146,6 +253,7 @@ export default function ChatPage() {
     const currentContent = currentDisplayMessage?.content || '';
 
     const renderGradientText = (text: string, progress: number) => {
+        if (progress >= 1) return text;
         const chars = text.split('');
         const totalChars = chars.length;
         if (totalChars === 0) return null;
@@ -164,6 +272,7 @@ export default function ChatPage() {
 
     const handleRootClick = (e: React.MouseEvent) => {
         if (isSettingsOpen) return;
+        if (isLoading) return;
 
         const target = e.target as HTMLElement;
         if (target.closest('input') || target.closest('button')) {
@@ -175,8 +284,8 @@ export default function ChatPage() {
         }
     };
 
-    // 当 showInputBox 为 true 时，不显示任何对话内容
-    const shouldShowContent = !showInputBox && currentContent;
+    const showLoading = isLoading && !showInputBox;
+    const shouldShowContent = !showInputBox && !showLoading && currentContent;
     const displayContent = shouldShowContent ? currentContent : '';
 
     return (
@@ -244,12 +353,12 @@ export default function ChatPage() {
                             textShadow: '0.5px 0.5px 0 #FFFFFF, -0.5px -0.5px 0 #FFFFFF, 0.5px -0.5px 0 #FFFFFF, -0.5px 0.5px 0 #FFFFFF',
                         }}
                     >
-                        {showInputBox ? '你' : currentSpeaker}
+                        {showInputBox ? '你' : (showLoading ? '莉莉丝' : currentSpeaker)}
                     </div>
 
                     {/* 内容区域 */}
                     <div
-                        className="text-center leading-relaxed flex justify-center flex-wrap"
+                        className="text-center leading-relaxed flex justify-center flex-wrap items-center min-h-[60px]"
                         style={{
                             fontFamily: 'WeiLaiYuan, var(--font-geist-sans)',
                             color: '#FFFFFF',
@@ -272,6 +381,15 @@ export default function ChatPage() {
                                 }}
                                 autoFocus
                             />
+                        ) : showLoading ? (
+                            <div className="flex justify-center items-center">
+                                <Image
+                                    src="/MaodeLab_LOAD_BTN.svg"
+                                    alt="加载中"
+                                    width={40}
+                                    height={40}
+                                />
+                            </div>
                         ) : (
                             renderGradientText(displayContent, revealProgress)
                         )}
