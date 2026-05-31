@@ -158,11 +158,11 @@ export default function ChatPage() {
     };
 
     return (
-<div
-    className="relative h-screen w-full overflow-hidden bg-black"
-    style={{ cursor: `url('/styles/galgame/ui/cursor.png'), auto` }}
-    onClick={!isSettingsOpen ? handleNextMessage : undefined}
->
+        <div
+            className="relative h-screen w-full overflow-hidden bg-black"
+            style={{ cursor: `url('/styles/galgame/ui/cursor.png'), auto` }}
+            onClick={!isSettingsOpen ? handleNextMessage : undefined}
+        >
             {/* 背景图 */}
             <div
                 className="absolute inset-0 opacity-40"

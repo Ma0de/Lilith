@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, MouseEvent, useState, useEffect } from 'react';
+import { useRef, MouseEvent, useState, useEffect, useCallback } from 'react';
 
 interface SliderProps {
     id: string;
@@ -13,52 +13,85 @@ interface SliderProps {
     onMuteLeave?: () => void;
 }
 
-export default function Slider({ 
-    id, 
-    value, 
-    onChange, 
-    label, 
+export default function Slider({
+    id,
+    value,
+    onChange,
+    label,
     showMute = false,
     onMuteClick,
     onMuteHover,
-    onMuteLeave 
+    onMuteLeave
 }: SliderProps) {
     const [isDragging, setIsDragging] = useState(false);
     const sliderRef = useRef<HTMLDivElement>(null);
+    const isDraggingRef = useRef(false);
+    const startMouseXRef = useRef(0);
+    const hasMovedRef = useRef(false);
+    const onChangeRef = useRef(onChange);
+
+    // 保持 onChange 引用最新
+    useEffect(() => {
+        onChangeRef.current = onChange;
+    }, [onChange]);
 
     const handleMouseDown = (e: MouseEvent) => {
-        setIsDragging(true);
-        updateSliderValue(e);
-    };
+        e.preventDefault();
 
-    const handleMouseMove = (e: MouseEvent) => {
-        if (isDragging) {
-            updateSliderValue(e);
-        }
-    };
+        // 记录起始位置
+        startMouseXRef.current = e.clientX;
+        hasMovedRef.current = false;
 
-    const handleMouseUp = () => {
-        setIsDragging(false);
-    };
-
-    const updateSliderValue = (e: MouseEvent) => {
+        // 立即更新点击位置
         const ref = sliderRef.current;
-        if (!ref) return;
+        if (ref) {
+            const rect = ref.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const percentage = Math.max(0, Math.min(100, (x / rect.width) * 100));
+            onChange(Math.round(percentage));
+        }
 
-        const rect = ref.getBoundingClientRect();
-        const x = e.clientX - rect.left;
-        const percentage = Math.max(0, Math.min(100, (x / rect.width) * 100));
-        onChange(Math.round(percentage));
+        // 进入拖拽状态
+        setIsDragging(true);
+        isDraggingRef.current = true;
     };
 
     useEffect(() => {
-        if (typeof window !== 'undefined') {
-            window.addEventListener('mouseup', handleMouseUp);
-            return () => {
-                window.removeEventListener('mouseup', handleMouseUp);
-            };
-        }
-    }, []);
+        if (!isDragging) return;
+
+        const handleMouseMove = (e: globalThis.MouseEvent) => {
+            if (!isDraggingRef.current) return;
+
+            if (!hasMovedRef.current) {
+                const deltaX = Math.abs(e.clientX - startMouseXRef.current);
+                if (deltaX < 3) return;
+                hasMovedRef.current = true;
+            }
+
+            const ref = sliderRef.current;
+            if (!ref) return;
+
+            const rect = ref.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const percentage = Math.max(0, Math.min(100, (x / rect.width) * 100));
+            onChangeRef.current(Math.round(percentage));
+        };
+
+        const handleMouseUp = () => {
+            setIsDragging(false);
+            isDraggingRef.current = false;
+            hasMovedRef.current = false;
+        };
+
+        window.addEventListener('mousemove', handleMouseMove);
+        window.addEventListener('mouseup', handleMouseUp);
+         document.addEventListener('mouseup', handleMouseUp);
+
+        return () => {
+            window.removeEventListener('mousemove', handleMouseMove);
+            window.removeEventListener('mouseup', handleMouseUp);
+        };
+    }, [isDragging]);
 
     return (
         <div className="flex items-center gap-4 select-none">
@@ -68,7 +101,6 @@ export default function Slider({
                     ref={sliderRef}
                     className="w-full h-7 bg-[#a8a8a8] rounded-[4px] relative shadow-inner cursor-pointer select-none"
                     onMouseDown={handleMouseDown}
-                    onMouseMove={handleMouseMove}
                 >
                     <div
                         className="h-full bg-white rounded-l-[4px] transition-none select-none"
@@ -76,15 +108,14 @@ export default function Slider({
                     />
                     <div
                         className={`absolute top-1/2 -translate-y-1/2 w-5 h-9 bg-black rounded-[4px] border-[2px] border-[#a8a8a8] shadow-sm select-none ${isDragging ? 'scale-105' : ''}`}
-                        style={{ 
+                        style={{
                             left: `${value}%`,
-                            transform: `${isDragging ? 'scale(1.05)' : ''}`
                         }}
                     />
                 </div>
             </div>
             {showMute && (
-                <button 
+                <button
                     onClick={onMuteClick}
                     onMouseEnter={onMuteHover}
                     onMouseLeave={onMuteLeave}
