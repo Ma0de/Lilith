@@ -14,6 +14,7 @@ export interface PendingMessage {
     timestamp: number;
     retryCount: number;
     status: 'pending' | 'processing' | 'completed' | 'failed';
+    nextRetryTime?: number; // 下次重试的时间戳
 }
 
 class WebSocketClient {
@@ -24,11 +25,18 @@ class WebSocketClient {
     private shouldReconnect = true;
     private pendingMessages: Map<string, PendingMessage> = new Map();
     private statusQueryTimer: NodeJS.Timeout | null = null;
+    private retryTimers: Map<string, NodeJS.Timeout> = new Map(); // 存储每个消息的重试定时器
+    
+    // 退避策略配置
+    private readonly BASE_DELAY = 2000; // 基础延迟 2秒
+    private readonly MAX_DELAY = 50000; // 最大延迟 50秒
+    private readonly MAX_RETRY_COUNT = 5; // 最大重试次数（对应 2,4,8,16,32秒，下次是50秒上限）
     
     public onOpen: (() => void) | null = null;
     public onClose: (() => void) | null = null;
     public onError: ((error: Event) => void) | null = null;
     public onMessageConfirmed: ((msgId: string) => void) | null = null;
+    public onRetryUpdate: ((msgId: string, retryCount: number, nextDelay: number) => void) | null = null;
 
     connect() {
         if (this.reconnectTimer) {
@@ -81,6 +89,7 @@ class WebSocketClient {
                 else if (data.type === 'chat' && data.msgId) {
                     // 标记消息为已完成
                     if (this.pendingMessages.has(data.msgId)) {
+                        this.clearRetryTimer(data.msgId);
                         this.pendingMessages.delete(data.msgId);
                         this.onMessageConfirmed?.(data.msgId);
                         console.log(`消息 ${data.msgId} 已被确认完成`);
@@ -100,9 +109,8 @@ class WebSocketClient {
             this.onClose?.();
             
             if (this.shouldReconnect && event.code !== 1000) {
-                this.reconnectTimer = setTimeout(() => {
-                    this.connect();
-                }, 3000);
+                // 使用指数退避重连
+                this.scheduleReconnect();
             }
         };
 
@@ -113,6 +121,39 @@ class WebSocketClient {
         };
     }
 
+    // 计算退避延迟（指数退避，上限50秒）
+    private calculateBackoffDelay(retryCount: number): number {
+        // 第1次失败: 2秒
+        // 第2次失败: 4秒  
+        // 第3次失败: 8秒
+        // 第4次失败: 16秒
+        // 第5次失败: 32秒
+        // 第6次及以后: 50秒（上限）
+        const delay = this.BASE_DELAY * Math.pow(2, retryCount - 1);
+        return Math.min(delay, this.MAX_DELAY);
+    }
+
+    // 调度重连
+    private reconnectAttemptCount = 0;
+    private scheduleReconnect() {
+        if (this.reconnectTimer) {
+            clearTimeout(this.reconnectTimer);
+        }
+        
+        const delay = this.calculateBackoffDelay(this.reconnectAttemptCount + 1);
+        console.log(`${delay/1000}秒后尝试重连 (第${this.reconnectAttemptCount + 1}次)`);
+        
+        this.reconnectTimer = setTimeout(() => {
+            this.reconnectAttemptCount++;
+            this.connect();
+        }, delay);
+    }
+
+    // 重置重连计数器（连接成功后调用）
+    private resetReconnectCounter() {
+        this.reconnectAttemptCount = 0;
+    }
+
     // 检查待处理消息的状态
     private async checkPendingMessages() {
         if (this.pendingMessages.size === 0) return;
@@ -121,7 +162,12 @@ class WebSocketClient {
         
         for (const [msgId, pending] of this.pendingMessages) {
             if (pending.status === 'pending' || pending.status === 'processing') {
-                await this.queryMessageStatus(msgId);
+                // 检查是否到了重试时间
+                if (pending.nextRetryTime && Date.now() >= pending.nextRetryTime) {
+                    await this.queryMessageStatus(msgId);
+                } else if (!pending.nextRetryTime) {
+                    await this.queryMessageStatus(msgId);
+                }
             }
         }
     }
@@ -159,11 +205,13 @@ class WebSocketClient {
             case 'not_found':
             case 'failed':
                 // 消息未找到或失败，进行重试
-                if (pending.retryCount < 3) {
-                    console.log(`消息 ${msgId} 未处理完成，准备重试 (${pending.retryCount + 1}/3)`);
-                    this.retryMessage(msgId);
+                if (pending.retryCount < this.MAX_RETRY_COUNT) {
+                    const nextDelay = this.calculateBackoffDelay(pending.retryCount + 1);
+                    console.log(`消息 ${msgId} 未处理完成，将在 ${nextDelay/1000}秒后重试 (${pending.retryCount + 1}/${this.MAX_RETRY_COUNT})`);
+                    this.scheduleRetry(msgId, nextDelay);
                 } else {
-                    console.error(`消息 ${msgId} 重试次数已达上限，放弃重试`);
+                    console.error(`消息 ${msgId} 重试次数已达上限 (${this.MAX_RETRY_COUNT}次)，放弃重试`);
+                    this.clearRetryTimer(msgId);
                     this.pendingMessages.delete(msgId);
                     // 通知UI消息发送失败
                     this.handlers.forEach(fn => fn({
@@ -181,20 +229,61 @@ class WebSocketClient {
                 break;
             case 'completed':
                 // 消息已完成
+                this.clearRetryTimer(msgId);
                 this.pendingMessages.delete(msgId);
                 console.log(`消息 ${msgId} 已完成`);
                 break;
         }
     }
 
-    // 重试消息
-    private retryMessage(msgId: string) {
+    // 调度重试（带指数退避）
+    private scheduleRetry(msgId: string, delay: number) {
+        // 清除该消息的现有定时器
+        this.clearRetryTimer(msgId);
+        
         const pending = this.pendingMessages.get(msgId);
         if (!pending) return;
+        
+        // 设置下次重试时间
+        pending.nextRetryTime = Date.now() + delay;
+        
+        // 通知UI更新
+        this.onRetryUpdate?.(msgId, pending.retryCount + 1, delay);
+        
+        // 设置定时器
+        const timer = setTimeout(() => {
+            this.executeRetry(msgId);
+        }, delay);
+        
+        this.retryTimers.set(msgId, timer);
+    }
+    
+    // 清除重试定时器
+    private clearRetryTimer(msgId: string) {
+        const timer = this.retryTimers.get(msgId);
+        if (timer) {
+            clearTimeout(timer);
+            this.retryTimers.delete(msgId);
+        }
+    }
+    
+    // 清除所有重试定时器
+    private clearAllRetryTimers() {
+        for (const timer of this.retryTimers.values()) {
+            clearTimeout(timer);
+        }
+        this.retryTimers.clear();
+    }
 
+    // 执行重试
+    private executeRetry(msgId: string) {
+        const pending = this.pendingMessages.get(msgId);
+        if (!pending) return;
+        
         pending.retryCount++;
         pending.status = 'pending';
-
+        delete pending.nextRetryTime;
+        
         if (this.isConnected()) {
             const retryMsg: WSMessage = {
                 type: 'retry',
@@ -204,9 +293,16 @@ class WebSocketClient {
                 msgId: msgId
             };
             this.ws?.send(JSON.stringify(retryMsg));
-            console.log(`重发消息 ${msgId} (${pending.retryCount}/3)`);
+            console.log(`重发消息 ${msgId} (${pending.retryCount}/${this.MAX_RETRY_COUNT})`);
+            
+            // 更新状态
+            pending.status = 'processing';
         } else {
             console.log(`WebSocket 未连接，等待重连后重试消息 ${msgId}`);
+            // 如果未连接，等连接后再调度
+            if (this.reconnectAttemptCount === 0) {
+                this.connect();
+            }
         }
     }
 
@@ -218,7 +314,8 @@ class WebSocketClient {
         this.statusQueryTimer = setInterval(() => {
             if (this.isConnected() && this.pendingMessages.size > 0) {
                 for (const [msgId, pending] of this.pendingMessages) {
-                    if (pending.status === 'pending' || pending.status === 'processing') {
+                    if ((pending.status === 'pending' || pending.status === 'processing') &&
+                        (!pending.nextRetryTime || Date.now() >= pending.nextRetryTime)) {
                         this.queryMessageStatus(msgId);
                     }
                 }
@@ -270,8 +367,13 @@ class WebSocketClient {
             if (pending) pending.status = 'processing';
         } else {
             console.warn('WebSocket 未连接，消息已缓存，等待重连后发送');
-            // 尝试重新连接
-            this.connect();
+            // 使用退避策略进行重连
+            if (this.reconnectAttemptCount === 0) {
+                this.connect();
+            }
+            // 调度消息重试
+            const delay = this.calculateBackoffDelay(1);
+            this.scheduleRetry(msgId, delay);
         }
 
         return msgId;
@@ -289,6 +391,7 @@ class WebSocketClient {
         console.log('主动断开 WebSocket');
         this.shouldReconnect = false;
         this.stopStatusQueryLoop();
+        this.clearAllRetryTimers();
         
         if (this.reconnectTimer) {
             clearTimeout(this.reconnectTimer);
@@ -304,6 +407,22 @@ class WebSocketClient {
     // 获取待处理消息数量
     getPendingCount(): number {
         return this.pendingMessages.size;
+    }
+    
+    // 获取消息的重试信息
+    getRetryInfo(msgId: string): { retryCount: number; nextDelay?: number } | null {
+        const pending = this.pendingMessages.get(msgId);
+        if (!pending) return null;
+        
+        let nextDelay: number | undefined;
+        if (pending.nextRetryTime) {
+            nextDelay = Math.max(0, pending.nextRetryTime - Date.now());
+        }
+        
+        return {
+            retryCount: pending.retryCount,
+            nextDelay
+        };
     }
 }
 
