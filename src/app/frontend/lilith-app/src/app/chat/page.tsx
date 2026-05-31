@@ -4,6 +4,7 @@ import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { Settings } from 'lucide-react';
 import SettingsOverlay from '@/components/SettingsOverlay';
+import LilithPortrait from '@/components/LilithPortrait';
 
 interface Message {
     id: number;
@@ -11,10 +12,28 @@ interface Message {
     content: string;
 }
 
+// 根据说话者和内容匹配表情的简单映射
+const getExpressionBySpeakerAndContent = (speaker: string, content: string): string => {
+    if (speaker === '莉莉丝') {
+        // 根据内容关键词匹配表情
+        if (content.includes('~')) {
+            return 'joyful_laugh';
+        }
+        if (content.includes('...')) {
+            return 'neutral_slight_upset';
+        }
+        if (content.includes('？') || content.includes('?')) {
+            return 'questioning';
+        }
+        return 'calm_gentle';
+    }
+    return 'calm_gentle';
+};
+
 export default function ChatPage() {
     const router = useRouter();
     const [messages, setMessages] = useState<Message[]>([
-        { id: 1, speaker: '测试', content: '欢迎回来' },
+        { id: 1, speaker: '莉莉丝', content: '欢迎回来~ ' },
     ]);
     const [inputText, setInputText] = useState('');
     const [isRevealing, setIsRevealing] = useState(false);
@@ -25,6 +44,10 @@ export default function ChatPage() {
     const [isSwitching, setIsSwitching] = useState(false);
     // 设置覆盖窗口状态
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+    // 当前表情
+    const [currentExpression, setCurrentExpression] = useState('calm_gentle');
+    // 身体状态
+    const [bodyState, setBodyState] = useState<1 | 2>(1);
 
     useEffect(() => {
         const savedStyle = localStorage.getItem('chatStyle');
@@ -34,6 +57,15 @@ export default function ChatPage() {
             router.push('/style-selection');
         }
     }, [router]);
+
+    // 监听最后一条消息，更新表情
+    useEffect(() => {
+        const lastMessage = messages[messages.length - 1];
+        if (lastMessage) {
+            const expression = getExpressionBySpeakerAndContent(lastMessage.speaker, lastMessage.content);
+            setCurrentExpression(expression);
+        }
+    }, [messages]);
 
     // 从左到右渐变效果
     useEffect(() => {
@@ -76,7 +108,7 @@ export default function ChatPage() {
 
         const reply: Message = {
             id: Date.now(),
-            speaker: '测试',
+            speaker: '莉莉丝',
             content: getAutoReplyByStyle(style),
         };
         setMessages(prev => [...prev, reply]);
@@ -85,11 +117,11 @@ export default function ChatPage() {
 
     const getAutoReplyByStyle = (style: string): string => {
         const replies = [
-            '11111',
-            '2222',
-            '33333',
-            '444444',
-            '555555'
+            '嗯嗯，我在听呢~',
+            '原来如此呢...',
+            '很有趣的想法！',
+            '莉莉丝也这么觉得哦~',
+            '继续说下去吧~'
         ];
         const randomReply = replies[Math.floor(Math.random() * replies.length)];
         return randomReply;
@@ -120,9 +152,9 @@ export default function ChatPage() {
 
     const getReplyByStyle = (input: string, style: string): string => {
         if (style === 'Galgame') {
-            return `「${input}」... 嗯，莉莉丝收到啦～ ✨`;
+            return `「${input}」... 嗯，莉莉丝收到啦～`;
         }
-        return `「${input}」... 莉莉丝记住了呢～ ✨`;
+        return `「${input}」... 莉莉丝记住了呢～`;
     };
 
     const currentDisplayMessage = currentRevealingMessage || messages[messages.length - 1];
@@ -173,11 +205,21 @@ export default function ChatPage() {
                 }}
             />
 
+            {/* 莉莉丝立绘 - 画面中心 */}
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0">
+                <LilithPortrait
+                    bodyState={bodyState}
+                    expression={currentExpression}
+                    animated={false}
+                    scale={1.9}
+                    className="translate-y-170"
+                />
+            </div>
             {/* 返回按钮 */}
             <button
                 onClick={(e) => {
                     e.stopPropagation();
-                    router.push('/style-selection');
+                    router.push('/');
                 }}
                 className="absolute top-6 left-6 z-20 text-white/60 hover:text-white transition-colors text-sm"
                 style={{ cursor: `url('/styles/galgame/ui/cursor.png'), pointer` }}
@@ -199,13 +241,13 @@ export default function ChatPage() {
             </button>
 
             {/* Galgame 风格对话框 - 底部 */}
-            <div className="absolute bottom-0 left-0 right-0 z-10">
+            <div className="absolute bottom-10 left-0 right-0 z-10">
                 <div className="mx-4 mb-4 rounded-2xl px-6 py-5">
                     <div
                         className="text-center mb-1"
                         style={{
                             fontFamily: 'WeiLaiYuan, var(--font-geist-sans)',
-                            color: '#FF636D',
+                            color: '#b84a51',
                             fontSize: '1.55rem',
                             textShadow: '0.5px 0.5px 0 #FFFFFF, -0.5px -0.5px 0 #FFFFFF, 0.5px -0.5px 0 #FFFFFF, -0.5px 0.5px 0 #FFFFFF',
                         }}
