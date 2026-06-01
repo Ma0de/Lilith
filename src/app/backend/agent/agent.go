@@ -9,6 +9,7 @@ type Agent struct {
 	llmClient     llm.LLMClient
 	memoryManager *MemoryManager
 	promptBuilder *PromptBuilder
+	messages      []llm.Message // 完整的对话历史
 }
 
 type MemoryStorageAdapter struct {
@@ -37,6 +38,7 @@ func NewAgent(llmClient llm.LLMClient, getMemoryFunc func(string) (*MemoryList, 
 		llmClient:     llmClient,
 		memoryManager: NewMemoryManager(adapter),
 		promptBuilder: NewPromptBuilder(),
+		messages:      make([]llm.Message, 0),
 	}
 }
 
@@ -44,7 +46,7 @@ type ProcessResult struct {
 	Reply         string
 	UpdatedMemory map[string]*MemoryList
 	ShouldConfuse bool
-	Expression    string // 新增
+	Expression    string
 }
 
 func (a *Agent) ProcessMessage(userMessage string, memoryDeltas map[string]*MemoryDelta) (*ProcessResult, error) {
@@ -52,6 +54,7 @@ func (a *Agent) ProcessMessage(userMessage string, memoryDeltas map[string]*Memo
 		UpdatedMemory: make(map[string]*MemoryList),
 	}
 
+	// 版本校验
 	for listName, delta := range memoryDeltas {
 		if delta == nil {
 			continue
@@ -68,20 +71,39 @@ func (a *Agent) ProcessMessage(userMessage string, memoryDeltas map[string]*Memo
 	memoryContext := a.promptBuilder.BuildMemoryContext(memoryDeltas)
 	expressionList := BuildExpressionList()
 
-	messages := []llm.Message{
-		{Role: "system", Content: a.promptBuilder.BuildSystemPrompt(memoryContext, expressionList)},
-		{Role: "user", Content: a.promptBuilder.BuildUserMessage(userMessage)},
+	// 如果是第一条消息，初始化 messages
+	if len(a.messages) == 0 {
+		systemPrompt := a.promptBuilder.BuildSystemPrompt(memoryContext, expressionList)
+		a.messages = append(a.messages, llm.Message{
+			Role:    "system",
+			Content: systemPrompt,
+		})
 	}
 
-	llmResponse, err := a.llmClient.Chat(messages)
+	// 添加用户消息
+	a.messages = append(a.messages, llm.Message{
+		Role:    "user",
+		Content: a.promptBuilder.BuildUserMessage(userMessage),
+	})
+
+	// 调用 LLM
+	llmResponse, err := a.llmClient.Chat(a.messages)
 	if err != nil {
 		return nil, err
 	}
 
+	// 解析响应
 	parsed := ParseOutput(llmResponse)
 	result.Reply = parsed.EchoContent
 	result.Expression = parsed.Expression
 
+	// 将助手回复添加到历史
+	a.messages = append(a.messages, llm.Message{
+		Role:    "assistant",
+		Content: llmResponse,
+	})
+
+	// 执行记忆操作
 	for _, cmd := range parsed.Commands {
 		var updatedList *MemoryList
 		var err error
@@ -109,6 +131,7 @@ func (a *Agent) ProcessMessage(userMessage string, memoryDeltas map[string]*Memo
 		}
 	}
 
+	// 绕晕检测
 	for listName := range memoryDeltas {
 		if a.memoryManager.ShouldConfuse(listName) {
 			result.ShouldConfuse = true
@@ -125,4 +148,9 @@ func (a *Agent) ProcessMessage(userMessage string, memoryDeltas map[string]*Memo
 
 func (a *Agent) GetMemoryDelta(listName string) (*MemoryDelta, error) {
 	return a.memoryManager.GetMemoryDelta(listName)
+}
+
+// 清空对话历史（可选）
+func (a *Agent) ClearConversation() {
+	a.messages = make([]llm.Message, 0)
 }
