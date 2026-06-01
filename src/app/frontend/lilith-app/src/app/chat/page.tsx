@@ -1,12 +1,13 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { Settings } from 'lucide-react';
 import Image from 'next/image';
 import SettingsOverlay from '@/components/SettingsOverlay';
 import LilithPortrait from '@/components/LilithPortrait';
 import { getWebSocketClient } from '@/lib/websocket';
+import useNotice from '@/components/Notice';  // 导入 useNotice
 
 interface Message {
     id: number;
@@ -52,23 +53,41 @@ export default function ChatPage() {
     const [isInitialized, setIsInitialized] = useState(false);
     const wsClientRef = useRef<ReturnType<typeof getWebSocketClient> | null>(null);
     const messagesRef = useRef(messages);
+    
+    // 使用通知 Hook
+    const { warning } = useNotice();
+    
+    // 标记是否已经初始化过 WebSocket
+    const isWsInitialized = useRef(false);
 
     // 保持 messagesRef 同步
     useEffect(() => {
         messagesRef.current = messages;
     }, [messages]);
 
-    // WebSocket 连接
+    // WebSocket 连接 - 只执行一次
     useEffect(() => {
+        if (isWsInitialized.current) return;
+        isWsInitialized.current = true;
+        
+        // 获取客户端实例
         const client = getWebSocketClient();
         wsClientRef.current = client;
+
+        // 设置断开连接时的回调 - 弹通知
+        client.setDisconnectCallback(() => {
+            console.log('WebSocket 断开，准备弹通知');
+            warning('与应用的 WebSocket 连接断开', {
+                title: 'NET_WS_CONN_FAIL',
+            });
+        });
 
         client.onOpen = () => {
             console.log('WebSocket 连接成功回调');
         };
 
         client.onClose = () => {
-            console.log('WebSocket 断开回调');
+            console.log('WebSocket 断开回调（正常关闭）');
         };
 
         client.onError = (error) => {
@@ -97,12 +116,15 @@ export default function ChatPage() {
         return () => {
             console.log('组件卸载，移除消息处理器');
             removeHandler();
+            client.setDisconnectCallback(null);
             client.onOpen = null;
             client.onClose = null;
             client.onError = null;
+            isWsInitialized.current = false;
         };
-    }, []);
+    }, [warning]);  // 添加 warning 依赖
 
+    // 其余代码保持不变...
     useEffect(() => {
         const savedStyle = localStorage.getItem('chatStyle');
         if (savedStyle) {
@@ -120,7 +142,7 @@ export default function ChatPage() {
         }
     }, [messages]);
 
-    // ✅ 添加初始消息的显示逻辑
+    // 添加初始消息的显示逻辑
     useEffect(() => {
         if (!isInitialized && messages.length > 0) {
             console.log('初始化显示第一条消息');
@@ -162,12 +184,10 @@ export default function ChatPage() {
             if (lastMessage) {
                 console.log('开始显示新消息:', lastMessage.content);
                 
-                // 重置状态
                 setShowInputBox(false);
                 setWaitingForClick(false);
                 setWaitingForNext(false);
                 
-                // 触发显示动画
                 setCurrentRevealingMessage(lastMessage);
                 setRevealProgress(0);
                 setIsRevealing(true);
@@ -217,7 +237,6 @@ export default function ChatPage() {
         const userInput = inputText;
         console.log('发送消息:', userInput);
 
-        // 添加用户消息到列表
         const userMessage: Message = {
             id: Date.now(),
             speaker: '你',
@@ -233,7 +252,6 @@ export default function ChatPage() {
         setRevealProgress(0);
         setIsLoading(true);
 
-        // 通过 WebSocket 发送消息到后端
         const client = wsClientRef.current;
         if (client) {
             if (!client.isConnected()) {
@@ -289,119 +307,120 @@ export default function ChatPage() {
     const displayContent = shouldShowContent ? currentContent : '';
 
     return (
-        <div
-            className="relative h-screen w-full overflow-hidden bg-black"
-            style={{ cursor: `url('/styles/galgame/ui/cursor.png'), auto` }}
-            onClick={handleRootClick}
-        >
-            {/* 背景图 */}
+        <>
             <div
-                className="absolute inset-0 opacity-40"
-                style={{
-                    backgroundImage: "url('/Scene/Scence_10_2.png')",
-                    backgroundSize: 'cover',
-                    backgroundPosition: 'center',
-                }}
-            />
-
-            {/* 莉莉丝立绘 - 画面中心 */}
-            <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0">
-                <LilithPortrait
-                    bodyState={bodyState}
-                    expression={currentExpression}
-                    animated={false}
-                    scale={1.9}
-                    className="translate-y-170"
+                className="relative h-screen w-full overflow-hidden bg-black"
+                style={{ cursor: `url('/styles/galgame/ui/cursor.png'), auto` }}
+                onClick={handleRootClick}
+            >
+                {/* 背景图 */}
+                <div
+                    className="absolute inset-0 opacity-40"
+                    style={{
+                        backgroundImage: "url('/Scene/Scence_10_2.png')",
+                        backgroundSize: 'cover',
+                        backgroundPosition: 'center',
+                    }}
                 />
-            </div>
 
-            {/* 返回按钮 */}
-            <button
-                onClick={(e) => {
-                    e.stopPropagation();
-                    router.push('/');
-                }}
-                className="absolute top-6 left-6 z-20 text-white/60 hover:text-white transition-colors text-sm"
-                style={{ cursor: `url('/styles/galgame/ui/cursor.png'), pointer` }}
-            >
-                ← 返回
-            </button>
+                {/* 莉莉丝立绘 - 画面中心 */}
+                <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0">
+                    <LilithPortrait
+                        bodyState={bodyState}
+                        expression={currentExpression}
+                        animated={false}
+                        scale={1.9}
+                        className="translate-y-170"
+                    />
+                </div>
 
-            {/* 设置按钮 */}
-            <button
-                onClick={(e) => {
-                    e.stopPropagation();
-                    setIsSettingsOpen(true);
-                }}
-                className="absolute top-6 right-6 z-20 text-white/60 hover:text-white transition-colors p-2 rounded-full hover:bg-white/10"
-                style={{ cursor: `url('/styles/galgame/ui/cursor.png'), pointer` }}
-                aria-label="设置"
-            >
-                <Settings size={22} />
-            </button>
+                {/* 返回按钮 */}
+                <button
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        router.push('/');
+                    }}
+                    className="absolute top-6 left-6 z-20 text-white/60 hover:text-white transition-colors text-sm"
+                    style={{ cursor: `url('/styles/galgame/ui/cursor.png'), pointer` }}
+                >
+                    ← 返回
+                </button>
 
-            {/* Galgame 风格对话框 - 底部 */}
-            <div className="absolute bottom-23 left-0 right-0 z-10">
-                <div className="mx-4 mb-4 rounded-2xl px-6 py-5">
-                    {/* 说话者名称 */}
-                    <div
-                        className="text-center mb-1"
-                        style={{
-                            fontFamily: 'WeiLaiYuan, var(--font-geist-sans)',
-                            color: '#b84a51',
-                            fontSize: '1.55rem',
-                            textShadow: '0.5px 0.5px 0 #FFFFFF, -0.5px -0.5px 0 #FFFFFF, 0.5px -0.5px 0 #FFFFFF, -0.5px 0.5px 0 #FFFFFF',
-                        }}
-                    >
-                        {showInputBox ? '你' : (showLoading ? '莉莉丝' : currentSpeaker)}
-                    </div>
+                {/* 设置按钮 */}
+                <button
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        setIsSettingsOpen(true);
+                    }}
+                    className="absolute top-6 right-6 z-20 text-white/60 hover:text-white transition-colors p-2 rounded-full hover:bg-white/10"
+                    style={{ cursor: `url('/styles/galgame/ui/cursor.png'), pointer` }}
+                    aria-label="设置"
+                >
+                    <Settings size={22} />
+                </button>
 
-                    {/* 内容区域 */}
-                    <div
-                        className="text-center leading-relaxed flex justify-center flex-wrap items-center min-h-[60px]"
-                        style={{
-                            fontFamily: 'WeiLaiYuan, var(--font-geist-sans)',
-                            color: '#FFFFFF',
-                            fontSize: '1.25rem',
-                            textShadow: '2px 2px 0 #000000, -1px -1px 0 #000000, 1px -1px 0 #000000, -1px 1px 0 #000000',
-                        }}
-                    >
-                        {showInputBox ? (
-                            <input
-                                type="text"
-                                value={inputText}
-                                onChange={(e) => setInputText(e.target.value)}
-                                onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
-                                placeholder="点击这里输入..."
-                                className="w-full bg-transparent text-white text-center outline-none"
-                                style={{
-                                    fontSize: '1.25rem',
-                                    fontFamily: 'WeiLaiYuan, var(--font-geist-sans)',
-                                    letterSpacing: '2px',
-                                }}
-                                autoFocus
-                            />
-                        ) : showLoading ? (
-                            <div className="flex justify-center items-center">
-                                <Image
-                                    src="/MaodeLab_LOAD_BTN.svg"
-                                    alt="加载中"
-                                    width={40}
-                                    height={40}
+                {/* Galgame 风格对话框 - 底部 */}
+                <div className="absolute bottom-23 left-0 right-0 z-10">
+                    <div className="mx-4 mb-4 rounded-2xl px-6 py-5">
+                        <div
+                            className="text-center mb-1"
+                            style={{
+                                fontFamily: 'WeiLaiYuan, var(--font-geist-sans)',
+                                color: '#b84a51',
+                                fontSize: '1.55rem',
+                                textShadow: '0.5px 0.5px 0 #FFFFFF, -0.5px -0.5px 0 #FFFFFF, 0.5px -0.5px 0 #FFFFFF, -0.5px 0.5px 0 #FFFFFF',
+                            }}
+                        >
+                            {showInputBox ? '你' : (showLoading ? '莉莉丝' : currentSpeaker)}
+                        </div>
+
+                        <div
+                            className="text-center leading-relaxed flex justify-center flex-wrap items-center min-h-[60px]"
+                            style={{
+                                fontFamily: 'WeiLaiYuan, var(--font-geist-sans)',
+                                color: '#FFFFFF',
+                                fontSize: '1.25rem',
+                                textShadow: '2px 2px 0 #000000, -1px -1px 0 #000000, 1px -1px 0 #000000, -1px 1px 0 #000000',
+                            }}
+                        >
+                            {showInputBox ? (
+                                <input
+                                    type="text"
+                                    value={inputText}
+                                    onChange={(e) => setInputText(e.target.value)}
+                                    onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
+                                    placeholder="点击这里输入..."
+                                    className="w-full bg-transparent text-white text-center outline-none"
+                                    style={{
+                                        fontSize: '1.25rem',
+                                        fontFamily: 'WeiLaiYuan, var(--font-geist-sans)',
+                                        letterSpacing: '2px',
+                                    }}
+                                    autoFocus
                                 />
-                            </div>
-                        ) : (
-                            renderGradientText(displayContent, revealProgress)
-                        )}
+                            ) : showLoading ? (
+                                <div className="flex justify-center items-center">
+                                    <Image
+                                        src="/MaodeLab_LOAD_BTN.svg"
+                                        alt="加载中"
+                                        width={40}
+                                        height={40}
+                                    />
+                                </div>
+                            ) : (
+                                renderGradientText(displayContent, revealProgress)
+                            )}
+                        </div>
                     </div>
                 </div>
-            </div>
 
-            {/* 全屏设置覆盖窗口 */}
-            <SettingsOverlay
-                isOpen={isSettingsOpen}
-                onClose={() => setIsSettingsOpen(false)}
-            />
-        </div>
+                {/* 全屏设置覆盖窗口 */}
+                <SettingsOverlay
+                    isOpen={isSettingsOpen}
+                    onClose={() => setIsSettingsOpen(false)}
+                />
+            </div>
+            
+        </>
     );
 }

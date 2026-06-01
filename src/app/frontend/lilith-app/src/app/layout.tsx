@@ -1,11 +1,14 @@
+// layout.tsx - 修改
+
 'use client';
 
 import { Geist, Geist_Mono } from "next/font/google";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { LoadingAnimation } from "@/components/LoadingAnimation";
 import { AnimationText } from "@/components/AnimationText";
 import { Button } from "@/components/Button";
 import { getWebSocketClient } from "@/lib/websocket";
+import { GlobalNoticeContainer } from "@/components/Notice";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -25,8 +28,12 @@ export default function RootLayout({
 }>) {
   const [isLoading, setIsLoading] = useState(true);
   const [fatalError, setFatalError] = useState<string | null>(null);
+  const isInitialized = useRef(false); // 添加这个标志
 
   useEffect(() => {
+    if (isInitialized.current) return; // 防止重复执行
+    isInitialized.current = true;
+    
     const wsClient = getWebSocketClient();
     let timeoutId: NodeJS.Timeout | null = null;
     let isResolved = false;
@@ -67,7 +74,6 @@ export default function RootLayout({
     if (wsClient.isConnected()) {
       handleSuccess();
     } else {
-      // 开始连接
       wsClient.connect();
     }
 
@@ -76,9 +82,9 @@ export default function RootLayout({
       wsClient.onOpen = null;
       wsClient.onError = null;
     };
-  }, []);
+  }, []); // 空依赖数组
 
-  // 显示加载动画（加载中或超时前）
+  // 显示加载动画
   if (isLoading) {
     return (
       <html lang="en" className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}>
@@ -96,7 +102,6 @@ export default function RootLayout({
         <body className="min-h-full flex flex-col bg-zinc-50 dark:bg-black">
           <div className="flex flex-col flex-1 items-center justify-center p-4">
             <div className="max-w-md w-full text-center">
-              {/* 错误图标 */}
               <div className="mb-8 flex justify-center">
                 <div className="w-24 h-24 bg-red-100 dark:bg-red-900/30 rounded-full flex items-center justify-center">
                   <svg className="w-12 h-12 text-red-600 dark:text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -105,14 +110,12 @@ export default function RootLayout({
                 </div>
               </div>
 
-              {/* 错误代码 */}
               <div className="mb-4">
                 <span className="text-xs font-mono tracking-wider text-red-600 dark:text-red-400 bg-red-100 dark:bg-red-900/30 px-3 py-1 rounded-full">
                   ERROR #NET_WS_CONN_FAIL
                 </span>
               </div>
 
-              {/* 错误标题 */}
               <AnimationText
                 text="无法连接到 WebSocket 服务器"
                 className="text-3xl font-bold text-black dark:text-white mb-4"
@@ -120,7 +123,6 @@ export default function RootLayout({
                 duration={500}
               />
 
-              {/* 错误描述 */}
               <AnimationText
                 text={fatalError}
                 className="text-zinc-600 dark:text-zinc-400 leading-relaxed mb-8 block"
@@ -128,7 +130,6 @@ export default function RootLayout({
                 duration={500}
               />
 
-              {/* 操作按钮组 */}
               <div className="flex flex-col sm:flex-row gap-3 justify-center">
                 <Button
                   variant="primary"
@@ -195,7 +196,6 @@ export default function RootLayout({
                 </Button>
               </div>
 
-              {/* 提示文字 */}
               <p className="text-xs text-zinc-400 dark:text-zinc-600 mt-8">
                 如果问题持续存在，请尝试联系开发者获取帮助
               </p>
@@ -210,6 +210,7 @@ export default function RootLayout({
     <html lang="en" className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}>
       <body className="min-h-full flex flex-col">
         {children}
+        <GlobalNoticeContainer />
       </body>
     </html>
   );

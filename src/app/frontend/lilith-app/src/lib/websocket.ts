@@ -17,6 +17,10 @@ export interface PendingMessage {
     nextRetryTime?: number; // 下次重试的时间戳
 }
 
+// 模块级别的防重复标志（不受组件生命周期影响）
+let hasShownDisconnectWarning = false;
+let warningResetTimer: NodeJS.Timeout | null = null;
+
 class WebSocketClient {
     private ws: WebSocket | null = null;
     private handlers: ((data: WSMessage) => void)[] = [];
@@ -25,18 +29,26 @@ class WebSocketClient {
     private shouldReconnect = true;
     private pendingMessages: Map<string, PendingMessage> = new Map();
     private statusQueryTimer: NodeJS.Timeout | null = null;
-    private retryTimers: Map<string, NodeJS.Timeout> = new Map(); // 存储每个消息的重试定时器
-    
+    private retryTimers: Map<string, NodeJS.Timeout> = new Map();
+
     // 退避策略配置
     private readonly BASE_DELAY = 2000; // 基础延迟 2秒
     private readonly MAX_DELAY = 50000; // 最大延迟 50秒
-    private readonly MAX_RETRY_COUNT = 5; // 最大重试次数（对应 2,4,8,16,32秒，下次是50秒上限）
-    
+    private readonly MAX_RETRY_COUNT = 5; // 最大重试次数
+
     public onOpen: (() => void) | null = null;
     public onClose: (() => void) | null = null;
     public onError: ((error: Event) => void) | null = null;
     public onMessageConfirmed: ((msgId: string) => void) | null = null;
     public onRetryUpdate: ((msgId: string, retryCount: number, nextDelay: number) => void) | null = null;
+    
+    // 断开连接时的回调函数（由外部设置）
+    private onDisconnectCallback: (() => void) | null = null;
+
+    // 设置断开时的回调函数
+    setDisconnectCallback(callback: (() => void) | null) {
+        this.onDisconnectCallback = callback;
+    }
 
     connect() {
         if (this.reconnectTimer) {
@@ -49,12 +61,12 @@ class WebSocketClient {
             this.startStatusQueryLoop();
             return;
         }
-        
+
         if (this.ws?.readyState === WebSocket.CONNECTING) {
             console.log('WebSocket 正在连接中...');
             return;
         }
-        
+
         if (this.isConnecting) {
             console.log('防止重复连接');
             return;
@@ -62,15 +74,21 @@ class WebSocketClient {
 
         this.isConnecting = true;
         this.shouldReconnect = true;
-        
+
         console.log('开始连接 WebSocket...');
         this.ws = new WebSocket('ws://localhost:8080/ws');
 
         this.ws.onopen = () => {
             console.log('WebSocket 已连接');
             this.isConnecting = false;
+            // 连接成功后重置模块级标志
+            hasShownDisconnectWarning = false;
+            if (warningResetTimer) {
+                clearTimeout(warningResetTimer);
+                warningResetTimer = null;
+            }
             this.onOpen?.();
-            
+
             // 连接成功后，检查待处理消息
             this.checkPendingMessages();
             this.startStatusQueryLoop();
@@ -80,7 +98,7 @@ class WebSocketClient {
             console.log('原始消息:', e.data);
             try {
                 const data = JSON.parse(e.data) as WSMessage;
-                
+
                 // 处理状态响应
                 if (data.type === 'status_response') {
                     this.handleStatusResponse(data);
@@ -95,7 +113,7 @@ class WebSocketClient {
                         console.log(`消息 ${data.msgId} 已被确认完成`);
                     }
                 }
-                
+
                 this.handlers.forEach(fn => fn(data));
             } catch (err) {
                 console.error('解析失败', err);
@@ -107,9 +125,29 @@ class WebSocketClient {
             this.isConnecting = false;
             this.stopStatusQueryLoop();
             this.onClose?.();
-            
+
+            // 只有当不是正常关闭时，才触发断开回调
+            if (event.code !== 1000 && this.onDisconnectCallback) {
+                // 模块级别的防重复检查（不受 React 组件生命周期影响）
+                if (!hasShownDisconnectWarning) {
+                    hasShownDisconnectWarning = true;
+                    console.log('[WebSocket] 首次断开，调用回调弹窗');
+                    this.onDisconnectCallback();
+                    
+                    // 5秒后重置标志，允许下次断开再弹
+                    if (warningResetTimer) {
+                        clearTimeout(warningResetTimer);
+                    }
+                    warningResetTimer = setTimeout(() => {
+                        console.log('[WebSocket] 重置断开弹窗标志');
+                        hasShownDisconnectWarning = false;
+                    }, 5000);
+                } else {
+                    console.log('[WebSocket] 已有弹窗，跳过重复调用');
+                }
+            }
+
             if (this.shouldReconnect && event.code !== 1000) {
-                // 使用指数退避重连
                 this.scheduleReconnect();
             }
         };
@@ -123,12 +161,6 @@ class WebSocketClient {
 
     // 计算退避延迟（指数退避，上限50秒）
     private calculateBackoffDelay(retryCount: number): number {
-        // 第1次失败: 2秒
-        // 第2次失败: 4秒  
-        // 第3次失败: 8秒
-        // 第4次失败: 16秒
-        // 第5次失败: 32秒
-        // 第6次及以后: 50秒（上限）
         const delay = this.BASE_DELAY * Math.pow(2, retryCount - 1);
         return Math.min(delay, this.MAX_DELAY);
     }
@@ -139,10 +171,10 @@ class WebSocketClient {
         if (this.reconnectTimer) {
             clearTimeout(this.reconnectTimer);
         }
-        
+
         const delay = this.calculateBackoffDelay(this.reconnectAttemptCount + 1);
-        console.log(`${delay/1000}秒后尝试重连 (第${this.reconnectAttemptCount + 1}次)`);
-        
+        console.log(`${delay / 1000}秒后尝试重连 (第${this.reconnectAttemptCount + 1}次)`);
+
         this.reconnectTimer = setTimeout(() => {
             this.reconnectAttemptCount++;
             this.connect();
@@ -157,12 +189,11 @@ class WebSocketClient {
     // 检查待处理消息的状态
     private async checkPendingMessages() {
         if (this.pendingMessages.size === 0) return;
-        
+
         console.log(`检查 ${this.pendingMessages.size} 条待处理消息`);
-        
+
         for (const [msgId, pending] of this.pendingMessages) {
             if (pending.status === 'pending' || pending.status === 'processing') {
-                // 检查是否到了重试时间
                 if (pending.nextRetryTime && Date.now() >= pending.nextRetryTime) {
                     await this.queryMessageStatus(msgId);
                 } else if (!pending.nextRetryTime) {
@@ -204,16 +235,14 @@ class WebSocketClient {
         switch (data.content) {
             case 'not_found':
             case 'failed':
-                // 消息未找到或失败，进行重试
                 if (pending.retryCount < this.MAX_RETRY_COUNT) {
                     const nextDelay = this.calculateBackoffDelay(pending.retryCount + 1);
-                    console.log(`消息 ${msgId} 未处理完成，将在 ${nextDelay/1000}秒后重试 (${pending.retryCount + 1}/${this.MAX_RETRY_COUNT})`);
+                    console.log(`消息 ${msgId} 未处理完成，将在 ${nextDelay / 1000}秒后重试 (${pending.retryCount + 1}/${this.MAX_RETRY_COUNT})`);
                     this.scheduleRetry(msgId, nextDelay);
                 } else {
                     console.error(`消息 ${msgId} 重试次数已达上限 (${this.MAX_RETRY_COUNT}次)，放弃重试`);
                     this.clearRetryTimer(msgId);
                     this.pendingMessages.delete(msgId);
-                    // 通知UI消息发送失败
                     this.handlers.forEach(fn => fn({
                         type: 'error',
                         content: '消息发送失败，请重试',
@@ -224,11 +253,9 @@ class WebSocketClient {
                 }
                 break;
             case 'processing':
-                // 消息还在处理中，继续等待
                 console.log(`消息 ${msgId} 仍在处理中...`);
                 break;
             case 'completed':
-                // 消息已完成
                 this.clearRetryTimer(msgId);
                 this.pendingMessages.delete(msgId);
                 console.log(`消息 ${msgId} 已完成`);
@@ -238,26 +265,21 @@ class WebSocketClient {
 
     // 调度重试（带指数退避）
     private scheduleRetry(msgId: string, delay: number) {
-        // 清除该消息的现有定时器
         this.clearRetryTimer(msgId);
-        
+
         const pending = this.pendingMessages.get(msgId);
         if (!pending) return;
-        
-        // 设置下次重试时间
+
         pending.nextRetryTime = Date.now() + delay;
-        
-        // 通知UI更新
         this.onRetryUpdate?.(msgId, pending.retryCount + 1, delay);
-        
-        // 设置定时器
+
         const timer = setTimeout(() => {
             this.executeRetry(msgId);
         }, delay);
-        
+
         this.retryTimers.set(msgId, timer);
     }
-    
+
     // 清除重试定时器
     private clearRetryTimer(msgId: string) {
         const timer = this.retryTimers.get(msgId);
@@ -266,7 +288,7 @@ class WebSocketClient {
             this.retryTimers.delete(msgId);
         }
     }
-    
+
     // 清除所有重试定时器
     private clearAllRetryTimers() {
         for (const timer of this.retryTimers.values()) {
@@ -279,11 +301,11 @@ class WebSocketClient {
     private executeRetry(msgId: string) {
         const pending = this.pendingMessages.get(msgId);
         if (!pending) return;
-        
+
         pending.retryCount++;
         pending.status = 'pending';
         delete pending.nextRetryTime;
-        
+
         if (this.isConnected()) {
             const retryMsg: WSMessage = {
                 type: 'retry',
@@ -294,12 +316,9 @@ class WebSocketClient {
             };
             this.ws?.send(JSON.stringify(retryMsg));
             console.log(`重发消息 ${msgId} (${pending.retryCount}/${this.MAX_RETRY_COUNT})`);
-            
-            // 更新状态
             pending.status = 'processing';
         } else {
             console.log(`WebSocket 未连接，等待重连后重试消息 ${msgId}`);
-            // 如果未连接，等连接后再调度
             if (this.reconnectAttemptCount === 0) {
                 this.connect();
             }
@@ -309,8 +328,7 @@ class WebSocketClient {
     // 启动状态查询循环
     private startStatusQueryLoop() {
         this.stopStatusQueryLoop();
-        
-        // 每5秒查询一次待处理消息的状态
+
         this.statusQueryTimer = setInterval(() => {
             if (this.isConnected() && this.pendingMessages.size > 0) {
                 for (const [msgId, pending] of this.pendingMessages) {
@@ -340,8 +358,7 @@ class WebSocketClient {
 
     send(type: string, content: string, speaker: string = 'user'): string {
         const msgId = this.generateMsgId();
-        
-        // 记录待处理消息
+
         this.pendingMessages.set(msgId, {
             id: msgId,
             content: content,
@@ -350,10 +367,10 @@ class WebSocketClient {
             status: 'pending'
         });
 
-        const message: WSMessage = { 
-            type, 
-            content, 
-            speaker, 
+        const message: WSMessage = {
+            type,
+            content,
+            speaker,
             timestamp: Date.now(),
             msgId: msgId
         };
@@ -361,17 +378,13 @@ class WebSocketClient {
         if (this.isConnected()) {
             this.ws?.send(JSON.stringify(message));
             console.log('发送消息:', message);
-            
-            // 更新状态
             const pending = this.pendingMessages.get(msgId);
             if (pending) pending.status = 'processing';
         } else {
             console.warn('WebSocket 未连接，消息已缓存，等待重连后发送');
-            // 使用退避策略进行重连
             if (this.reconnectAttemptCount === 0) {
                 this.connect();
             }
-            // 调度消息重试
             const delay = this.calculateBackoffDelay(1);
             this.scheduleRetry(msgId, delay);
         }
@@ -392,33 +405,31 @@ class WebSocketClient {
         this.shouldReconnect = false;
         this.stopStatusQueryLoop();
         this.clearAllRetryTimers();
-        
+
         if (this.reconnectTimer) {
             clearTimeout(this.reconnectTimer);
             this.reconnectTimer = null;
         }
-        
+
         if (this.ws) {
             this.ws.close(1000, '正常关闭');
             this.ws = null;
         }
     }
 
-    // 获取待处理消息数量
     getPendingCount(): number {
         return this.pendingMessages.size;
     }
-    
-    // 获取消息的重试信息
+
     getRetryInfo(msgId: string): { retryCount: number; nextDelay?: number } | null {
         const pending = this.pendingMessages.get(msgId);
         if (!pending) return null;
-        
+
         let nextDelay: number | undefined;
         if (pending.nextRetryTime) {
             nextDelay = Math.max(0, pending.nextRetryTime - Date.now());
         }
-        
+
         return {
             retryCount: pending.retryCount,
             nextDelay
