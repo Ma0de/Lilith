@@ -1,7 +1,7 @@
 # 如何让LLM拥有“会遗忘”的长期记忆——假删、模糊化与版本号
 
-> 文档版本：1.0  
-> 最后更新：2026-05-29  
+> 文档版本：2.0
+> 最后更新：2026-05-31
 > 作者：猫德实验室
 
 ## 1. 概述
@@ -89,38 +89,63 @@ type MemoryStore struct {
 {
   "message": "我其实不喜欢草莓，我喜欢橘子",
   "memory_delta": {
-    "user_like_food": "version:00001,#草莓,橘子"
+    "user_like_food": {
+      "version": "00001",
+      "items": ["草莓"]
+    }
   }
 }
 ```
-
-> **注意**：`memory_delta` 的值是一个字符串，格式为 `version:版本号,记忆条目1,记忆条目2,...`。其中 `#` 开头表示模糊记忆。后端解析这个字符串后，会**完全覆盖**该列表的内容（因为版本号变了）。其他未在 `memory_delta` 中列出的记忆列表保持不变（依赖模型自身的上下文缓存）。
 
 多记忆同时更新示例：
 ```json
 {
   "message": "我叫猫德，我喜欢哈密瓜，不喜欢草莓和橘子",
   "memory_delta": {
-    "user_like_food": "version:00003,#草莓,#橘子,哈密瓜",
-    "user_name": "version:00001,猫德,#假猫"
+    "user_like_food": {
+      "version": "00003",
+      "items": ["#草莓", "#橘子", "哈密瓜"]
+    },
+    "user_name": {
+      "version": "00001",
+      "items": ["猫德", "#假猫"]
+    }
   }
 }
 ```
 
 ### 3.3 LLM 输出格式（模型 → 后端）
 
-模型在需要更新记忆时，必须在回复中嵌入 `<Memory>` 标签：
+模型在需要更新记忆时，必须在回复中嵌入短标签 `«M»...«/M»`：
 
 ```json
 {
-  "content": "<echo>是吗，我也喜欢吃草莓</echo><Memory>{\"list\":\"user_like_food\",\"operation\":\"add\",\"item\":\"草莓\",\"version\":\"00001\"}</Memory>"
+  "content": "<echo>是吗，我也喜欢吃草莓</echo>«M»l:user_like_food a:add i:草莓 v:00001«/M»"
 }
+```
+
+**操作类型映射**：
+| 操作 | 短标签 | 说明 |
+|------|--------|------|
+| 添加 | `a:add` | 添加新记忆 |
+| 替换 | `a:rep` | 替换旧记忆（需 `o:` 和 `n:`） |
+| 删除 | `a:del` | 删除记忆 |
+| 重置 | `a:rst` | 重置记忆列表（需 `k:` 指定保留数量） |
+
+**替换操作示例**：
+```
+«M»l:user_like_food a:rep o:草莓 n:橘子 v:00002«/M»
+```
+
+**重置操作示例**：
+```
+«M»l:user_like_food a:rst k:3 v:00006«/M»
 ```
 
 后端解析后：
 - 将 `<echo>` 内的内容作为对用户说的话返回
-- 执行 `<Memory>` 标签内的操作，更新本地存储
-- 将 `<Memory>` 标签从最终回复中移除（用户不可见）
+- 执行 `«M»...«/M»` 标签内的操作，更新本地存储
+- 将所有标签从最终回复中移除（用户不可见）
 
 ---
 
@@ -142,7 +167,7 @@ type MemoryStore struct {
 2. LLM 输出：
    ```json
    {
-     "content": "<echo>草莓很好吃呢！我也喜欢</echo><Memory>{\"list\":\"user_like_food\",\"operation\":\"add\",\"item\":\"草莓\",\"version\":\"00001\"}</Memory>"
+     "content": "<echo>草莓很好吃呢！我也喜欢</echo>«M»l:user_like_food a:add i:草莓 v:00001«/M»"
    }
    ```
 3. 后端解析，更新存储：
@@ -160,7 +185,10 @@ type MemoryStore struct {
 {
   "message": "我其实不喜欢草莓了，我喜欢橘子",
   "memory_delta": {
-    "user_like_food": "version:00001,草莓"
+    "user_like_food": {
+      "version": "00001",
+      "items": ["草莓"]
+    }
   }
 }
 ```
@@ -175,10 +203,9 @@ type MemoryStore struct {
 3. LLM 看到用户说“不喜欢草莓了，喜欢橘子”，输出：
    ```json
    {
-     "content": "<echo>骗我吗？不过橘子也不错哦</echo><Memory>{\"list\":\"user_like_food\",\"operation\":\"replace\",\"old\":\"草莓\",\"new\":\"橘子\",\"version\":\"00002\"}</Memory>"
+     "content": "<echo>骗我吗？不过橘子也不错哦</echo>«M»l:user_like_food a:rep o:草莓 n:橘子 v:00002«/M»"
    }
    ```
-   > 注意：`operation` 可以是 `replace` 或 `add`+`remove`，本系统设计时为了简化，采用 `replace` 语义。
 4. 后端更新存储：
    ```json
    {
@@ -195,7 +222,10 @@ type MemoryStore struct {
 {
   "message": "我又骗你了，其实我喜欢哈密瓜",
   "memory_delta": {
-    "user_like_food": "version:00002,#草莓,橘子"
+    "user_like_food": {
+      "version": "00002",
+      "items": ["#草莓", "橘子"]
+    }
   }
 }
 ```
@@ -248,7 +278,7 @@ type MemoryStore struct {
 - 模型在回复中输出：
   ```json
   {
-    "content": "<echo>我都被你绕晕了，你到底喜欢什么水果啊</echo><Memory>{\"list\":\"user_like_food\",\"operation\":\"reset\",\"keep\":3,\"version\":\"00006\"}</Memory>"
+    "content": "<echo>我都被你绕晕了，你到底喜欢什么水果啊</echo>«M»l:user_like_food a:rst k:3 v:00006«/M»"
   }
   ```
 - 后端执行 `reset` 操作：只保留最近的 3 条确定记忆（去除 `#` 标记），其余全部真删除（连模糊也不留）。
@@ -260,13 +290,112 @@ type MemoryStore struct {
 
 ## 7. 实现建议
 
-### 7.1 解析 LLM 输出的 `<Memory>` 标签
+### 7.1 解析 LLM 输出的记忆标签
 
-由于 LLM 可能格式错乱，建议使用正则表达式进行宽松匹配：
+使用多级回退解析器，兼容新旧格式和模型可能的小错误：
 
 ```go
-re := regexp.MustCompile(`<Memory>(.*?)</Memory>`)
-// 如果匹配失败，尝试查找包含 "list", "operation", "version" 的 JSON 片段
+import (
+    "regexp"
+    "encoding/json"
+    "strings"
+)
+
+type MemoryCommand struct {
+    List      string
+    Operation string // add, rep, del, rst
+    Item      string
+    OldItem   string // for replace
+    Version   string
+    Keep      int    // for reset
+}
+
+func ExtractMemoryCommands(content string) []MemoryCommand {
+    var commands []MemoryCommand
+    
+    // Level 1: 匹配短标签 «M»...«/M»
+    shortRe := regexp.MustCompile(`«M»(.*?)«/M»`)
+    matches := shortRe.FindAllStringSubmatch(content, -1)
+    for _, match := range matches {
+        if cmd := parseCompact(match[1]); cmd != nil {
+            commands = append(commands, *cmd)
+        }
+    }
+    if len(commands) > 0 {
+        return commands
+    }
+    
+    // Level 2: 回退到原 <Memory>...</Memory>
+    longRe := regexp.MustCompile(`<Memory>(.*?)</Memory>`)
+    matches = longRe.FindAllStringSubmatch(content, -1)
+    for _, match := range matches {
+        if cmd := parseLegacyJSON(match[1]); cmd != nil {
+            commands = append(commands, *cmd)
+        }
+    }
+    
+    return commands
+}
+
+func parseCompact(cmdStr string) *MemoryCommand {
+    parts := strings.Fields(cmdStr)
+    data := make(map[string]string)
+    for _, p := range parts {
+        kv := strings.SplitN(p, ":", 2)
+        if len(kv) == 2 {
+            data[kv[0]] = kv[1]
+        }
+    }
+    
+    cmd := &MemoryCommand{
+        List:      data["l"],
+        Operation: data["a"],
+        Item:      data["i"],
+        OldItem:   data["o"],
+        Version:   data["v"],
+    }
+    
+    // 处理 reset 的 keep 参数
+    if k, ok := data["k"]; ok {
+        fmt.Sscanf(k, "%d", &cmd.Keep)
+    }
+    
+    if cmd.List == "" || cmd.Operation == "" || cmd.Version == "" {
+        return nil
+    }
+    return cmd
+}
+
+func parseLegacyJSON(jsonStr string) *MemoryCommand {
+    var legacy struct {
+        List      string `json:"list"`
+        Operation string `json:"operation"`
+        Item      string `json:"item"`
+        Old       string `json:"old"`
+        New       string `json:"new"`
+        Version   string `json:"version"`
+        Keep      int    `json:"keep"`
+    }
+    if err := json.Unmarshal([]byte(jsonStr), &legacy); err != nil {
+        return nil
+    }
+    
+    cmd := &MemoryCommand{
+        List:      legacy.List,
+        Operation: legacy.Operation,
+        Version:   legacy.Version,
+        Keep:      legacy.Keep,
+    }
+    
+    if legacy.Operation == "replace" {
+        cmd.OldItem = legacy.Old
+        cmd.Item = legacy.New
+    } else {
+        cmd.Item = legacy.Item
+    }
+    
+    return cmd
+}
 ```
 
 ### 7.2 存储选择
@@ -291,6 +420,22 @@ re := regexp.MustCompile(`<Memory>(.*?)</Memory>`)
 - 姓名: 猫德, #假猫
 
 注意：带 # 前缀的是用户曾经说过但后来否定的信息，回答时可以表现出“好像记得，但不确定”的态度。
+
+【记忆更新格式要求】
+当你需要更新记忆时，必须在回复中使用以下格式：
+«M»l:<列表名> a:<操作> i:<物品> v:<版本号>«/M»
+
+操作代码：
+- add : 添加新记忆
+- rep : 替换（需加 o:<旧值> n:<新值>）
+- del : 删除（i 前加 # 表示模糊删除）
+- rst : 重置（只保留最近几条，加 k:<数量>）
+
+正确示例：
+«M»l:user_like_food a:add i:草莓 v:00001«/M»
+«M»l:user_like_food a:rep o:草莓 n:橘子 v:00002«/M»
+
+错误格式将被忽略，请严格遵守。
 ```
 
 ### 7.4 版本号生成
@@ -301,7 +446,7 @@ re := regexp.MustCompile(`<Memory>(.*?)</Memory>`)
 
 ## 8. 示例对话
 
-> 以下为完整用户可见对话（隐藏了 `<Memory>` 标签）
+> 以下为完整用户可见对话（隐藏了记忆标签）
 
 **用户**：我喜欢吃草莓  
 **莉莉丝**：草莓很好吃呢！我也喜欢  
@@ -328,3 +473,4 @@ re := regexp.MustCompile(`<Memory>(.*?)</Memory>`)
 本记忆系统通过**假删、模糊化、版本号、按需携带**四个核心机制，让一个普通的 LLM 也能表现出接近人类的记忆行为：记住重要信息，对否定信息产生犹豫，在反复修改时感到困惑，并且只在必要时才“想起”记忆。它不依赖昂贵的向量数据库，也不消耗过多的 token，非常适合轻量化、本地部署的 AI 角色应用。
 
 **猫德实验室** 将把此系统应用于 **莉莉丝（Lilith）** 桌面虚拟伙伴中，让用户感受到一个有血有肉、会遗忘也会耍赖的“真实存在”。
+```
