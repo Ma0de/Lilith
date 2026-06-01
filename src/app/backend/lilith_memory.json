@@ -1,0 +1,13 @@
+{
+  "user_like_food": {
+    "version": "00002",
+    "items": [
+      {
+        "value": "草莓",
+        "isFuzzy": false,
+        "createdAt": "0001-01-01T00:00:00Z"
+      }
+    ],
+    "updateAt": "2026-06-01T13:37:30.4483266+08:00"
+  }
+}

@@ -2,6 +2,8 @@ package server
 
 import (
 	"encoding/json"
+	"lilith-app/agent"
+	"lilith-app/llm"
 	"log"
 	"net/http"
 	"sync"
@@ -10,16 +12,27 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+type MemoryItem = agent.MemoryItem
+type MemoryList = agent.MemoryList
+type MemoryDelta = agent.MemoryDelta
+
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool { return true },
 }
 
 type WSMessage struct {
-	Type      string `json:"type"`
-	Content   string `json:"content"`
-	Speaker   string `json:"speaker"`
-	Timestamp int64  `json:"timestamp"`
-	MsgID     string `json:"msgId,omitempty"` // 消息唯一标识
+	Type        string                       `json:"type"`
+	Content     string                       `json:"content"`
+	Speaker     string                       `json:"speaker"`
+	Timestamp   int64                        `json:"timestamp"`
+	MsgID       string                       `json:"msgId,omitempty"`
+	MemoryDelta map[string]*MemoryDeltaInput `json:"memoryDelta,omitempty"`
+}
+
+type MemoryDeltaInput struct {
+	ListName string   `json:"listName"`
+	Version  string   `json:"version"`
+	Items    []string `json:"items"`
 }
 
 type MessageStatus struct {
@@ -42,6 +55,17 @@ var (
 	clients   = make(map[string]*ClientConnection)
 	clientsMu sync.RWMutex
 )
+
+var globalAgent *agent.Agent
+var agentOnce sync.Once
+
+func InitAgent(baseURL, apiKey, modelName string, getMemoryFunc func(string) (*agent.MemoryList, error), setMemoryFunc func(string, *agent.MemoryList) error) {
+	agentOnce.Do(func() {
+		llmClient := llm.NewOpenAIClient(baseURL, apiKey, modelName)
+		globalAgent = agent.NewAgent(llmClient, getMemoryFunc, setMemoryFunc)
+		log.Println("Agent初始化完成")
+	})
+}
 
 func HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 	conn, err := upgrader.Upgrade(w, r, nil)
@@ -161,7 +185,6 @@ func (c *ClientConnection) handleChatMessage(msg WSMessage) {
 		msgID = generateMsgID()
 	}
 
-	// 记录消息状态
 	c.mu.Lock()
 	c.pendingStatus[msgID] = &MessageStatus{
 		MsgID:     msgID,
@@ -174,31 +197,115 @@ func (c *ClientConnection) handleChatMessage(msg WSMessage) {
 	log.Printf("处理消息 [%s]: %s", msgID, msg.Content)
 
 	go func() {
+		var replyContent string
 
-		// 模拟处理结果
+		log.Printf("[DEBUG] 开始处理消息 [%s], globalAgent 是否为 nil: %v", msgID, globalAgent == nil)
+
+		if globalAgent != nil {
+			var memoryDeltas map[string]*agent.MemoryDelta
+
+			if msg.MemoryDelta != nil {
+				memoryDeltas = make(map[string]*agent.MemoryDelta)
+				for listName, delta := range msg.MemoryDelta {
+					memoryDeltas[listName] = &agent.MemoryDelta{
+						ListName: delta.ListName,
+						Version:  delta.Version,
+						Items:    delta.Items,
+					}
+				}
+			}
+
+			log.Printf("[DEBUG] 调用 ProcessMessage [%s]", msgID)
+			result, err := globalAgent.ProcessMessage(msg.Content, memoryDeltas)
+			log.Printf("[DEBUG] ProcessMessage 返回 [%s], err: %v", msgID, err)
+
+			if err != nil {
+				log.Printf("Agent处理错误 [%s]: %v", msgID, err)
+				replyContent = "抱歉，我出错了"
+			} else {
+				replyContent = result.Reply
+				log.Printf("[DEBUG] 获取到回复内容 [%s]: %s", msgID, replyContent)
+
+				for listName, list := range result.UpdatedMemory {
+					items := make([]string, len(list.Items))
+					for i, item := range list.Items {
+						if item.IsFuzzy {
+							items[i] = "#" + item.Value
+						} else {
+							items[i] = item.Value
+						}
+					}
+					memoryUpdate := MemoryDeltaUpdate{
+						ListName: listName,
+						Version:  list.Version,
+						Items:    items,
+					}
+					c.sendMemoryUpdate(memoryUpdate)
+				}
+			}
+		} else {
+			log.Printf("[DEBUG] globalAgent 为 nil，使用模拟回复")
+			replyContent = "莉莉丝收到了: " + msg.Content
+		}
+
+		log.Printf("[DEBUG] 准备更新状态 [%s]", msgID)
+		c.mu.Lock()
+		if status, exists := c.pendingStatus[msgID]; exists {
+			status.Status = "completed"
+			log.Printf("[DEBUG] 状态已更新为 completed [%s]", msgID)
+		} else {
+			log.Printf("[DEBUG] 找不到 pendingStatus [%s]", msgID)
+		}
+		c.mu.Unlock()
+
 		reply := WSMessage{
 			Type:      "chat",
 			Speaker:   "lilith",
-			Content:   "莉莉丝收到了: " + msg.Content,
+			Content:   replyContent,
 			Timestamp: time.Now().Unix(),
 			MsgID:     msgID,
 		}
 
-		// 更新状态为完成
-		c.mu.Lock()
-		if status, exists := c.pendingStatus[msgID]; exists {
-			status.Status = "completed"
-		}
-		c.mu.Unlock()
+		log.Printf("准备发送回复 [%s]: %s", msgID, replyContent)
 
-		replyData, _ := json.Marshal(reply)
+		replyData, err := json.Marshal(reply)
+		if err != nil {
+			log.Printf("[DEBUG] 序列化回复失败 [%s]: %v", msgID, err)
+			return
+		}
+
 		select {
 		case c.send <- replyData:
-			log.Printf("回复消息 [%s]: %s", msgID, reply.Content)
+			log.Printf("回复已发送 [%s]", msgID)
 		case <-time.After(5 * time.Second):
 			log.Printf("发送超时 [%s]", msgID)
 		}
 	}()
+}
+
+type MemoryDeltaUpdate struct {
+	ListName string   `json:"listName"`
+	Version  string   `json:"version"`
+	Items    []string `json:"items"`
+}
+
+func (c *ClientConnection) sendMemoryUpdate(update MemoryDeltaUpdate) {
+	msg := WSMessage{
+		Type:      "memory_update",
+		Speaker:   "system",
+		Content:   "",
+		Timestamp: time.Now().Unix(),
+	}
+	data, _ := json.Marshal(update)
+	msg.Content = string(data)
+
+	msgData, _ := json.Marshal(msg)
+	select {
+	case c.send <- msgData:
+		log.Printf("发送记忆更新: %s", update.ListName)
+	case <-time.After(5 * time.Second):
+		log.Printf("记忆更新发送超时")
+	}
 }
 
 // 处理状态查询
