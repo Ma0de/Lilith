@@ -26,6 +26,7 @@ type WSMessage struct {
 	Speaker     string                       `json:"speaker"`
 	Timestamp   int64                        `json:"timestamp"`
 	MsgID       string                       `json:"msgId,omitempty"`
+	Expression  string                       `json:"expression,omitempty"` // 新增
 	MemoryDelta map[string]*MemoryDeltaInput `json:"memoryDelta,omitempty"`
 }
 
@@ -198,6 +199,7 @@ func (c *ClientConnection) handleChatMessage(msg WSMessage) {
 
 	go func() {
 		var replyContent string
+		var replyExpression string
 
 		log.Printf("[DEBUG] 开始处理消息 [%s], globalAgent 是否为 nil: %v", msgID, globalAgent == nil)
 
@@ -222,9 +224,12 @@ func (c *ClientConnection) handleChatMessage(msg WSMessage) {
 			if err != nil {
 				log.Printf("Agent处理错误 [%s]: %v", msgID, err)
 				replyContent = "抱歉，我出错了"
+				replyExpression = "neutral_slight_upset"
 			} else {
 				replyContent = result.Reply
+				replyExpression = result.Expression
 				log.Printf("[DEBUG] 获取到回复内容 [%s]: %s", msgID, replyContent)
+				log.Printf("[DEBUG] 获取到表情 [%s]: %s", msgID, replyExpression)
 
 				for listName, list := range result.UpdatedMemory {
 					items := make([]string, len(list.Items))
@@ -246,6 +251,7 @@ func (c *ClientConnection) handleChatMessage(msg WSMessage) {
 		} else {
 			log.Printf("[DEBUG] globalAgent 为 nil，使用模拟回复")
 			replyContent = "莉莉丝收到了: " + msg.Content
+			replyExpression = "calm_gentle"
 		}
 
 		log.Printf("[DEBUG] 准备更新状态 [%s]", msgID)
@@ -259,14 +265,15 @@ func (c *ClientConnection) handleChatMessage(msg WSMessage) {
 		c.mu.Unlock()
 
 		reply := WSMessage{
-			Type:      "chat",
-			Speaker:   "lilith",
-			Content:   replyContent,
-			Timestamp: time.Now().Unix(),
-			MsgID:     msgID,
+			Type:       "chat",
+			Speaker:    "lilith",
+			Content:    replyContent,
+			Timestamp:  time.Now().Unix(),
+			MsgID:      msgID,
+			Expression: replyExpression,
 		}
 
-		log.Printf("准备发送回复 [%s]: %s", msgID, replyContent)
+		log.Printf("准备发送回复 [%s]: %s, 表情: %s", msgID, replyContent, replyExpression)
 
 		replyData, err := json.Marshal(reply)
 		if err != nil {

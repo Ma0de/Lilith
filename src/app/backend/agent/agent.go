@@ -44,6 +44,7 @@ type ProcessResult struct {
 	Reply         string
 	UpdatedMemory map[string]*MemoryList
 	ShouldConfuse bool
+	Expression    string // 新增
 }
 
 func (a *Agent) ProcessMessage(userMessage string, memoryDeltas map[string]*MemoryDelta) (*ProcessResult, error) {
@@ -65,9 +66,10 @@ func (a *Agent) ProcessMessage(userMessage string, memoryDeltas map[string]*Memo
 	}
 
 	memoryContext := a.promptBuilder.BuildMemoryContext(memoryDeltas)
+	expressionList := BuildExpressionList()
 
 	messages := []llm.Message{
-		{Role: "system", Content: a.promptBuilder.BuildSystemPrompt(memoryContext)},
+		{Role: "system", Content: a.promptBuilder.BuildSystemPrompt(memoryContext, expressionList)},
 		{Role: "user", Content: a.promptBuilder.BuildUserMessage(userMessage)},
 	}
 
@@ -78,6 +80,7 @@ func (a *Agent) ProcessMessage(userMessage string, memoryDeltas map[string]*Memo
 
 	parsed := ParseOutput(llmResponse)
 	result.Reply = parsed.EchoContent
+	result.Expression = parsed.Expression
 
 	for _, cmd := range parsed.Commands {
 		var updatedList *MemoryList

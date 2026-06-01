@@ -53,12 +53,16 @@ export default function ChatPage() {
     const [isInitialized, setIsInitialized] = useState(false);
     const wsClientRef = useRef<ReturnType<typeof getWebSocketClient> | null>(null);
     const messagesRef = useRef(messages);
-    
+
     // 使用通知 Hook
     const { warning } = useNotice();
-    
+
     // 标记是否已经初始化过 WebSocket
     const isWsInitialized = useRef(false);
+
+    useEffect(() => {
+    console.log('currentExpression 已更新为:', currentExpression);
+}, [currentExpression]);
 
     // 保持 messagesRef 同步
     useEffect(() => {
@@ -69,7 +73,7 @@ export default function ChatPage() {
     useEffect(() => {
         if (isWsInitialized.current) return;
         isWsInitialized.current = true;
-        
+
         // 获取客户端实例
         const client = getWebSocketClient();
         wsClientRef.current = client;
@@ -94,6 +98,7 @@ export default function ChatPage() {
             console.error('WebSocket 错误回调:', error);
         };
 
+        // 在 WebSocket onMessage 回调中
         const removeHandler = client.onMessage((data) => {
             console.log('收到消息:', data);
 
@@ -103,7 +108,13 @@ export default function ChatPage() {
                     speaker: '莉莉丝',
                     content: data.content,
                 };
-                
+
+                // 处理表情切换
+                if (data.expression) {
+                    console.log('设置表情:', data.expression);
+                    setCurrentExpression(data.expression);
+                }
+                console.log('完整消息数据:', JSON.stringify(data, null, 2));
                 console.log('添加回复消息:', reply);
                 setMessages(prev => [...prev, reply]);
                 setIsLoading(false);
@@ -134,34 +145,27 @@ export default function ChatPage() {
         }
     }, [router]);
 
-    useEffect(() => {
-        const lastMessage = messages[messages.length - 1];
-        if (lastMessage) {
-            const expression = getExpressionBySpeakerAndContent(lastMessage.speaker, lastMessage.content);
-            setCurrentExpression(expression);
-        }
-    }, [messages]);
 
     // 添加初始消息的显示逻辑
     useEffect(() => {
         if (!isInitialized && messages.length > 0) {
             console.log('初始化显示第一条消息');
             setIsInitialized(true);
-            
+
             const firstMessage = messages[0];
             setCurrentRevealingMessage(firstMessage);
             setRevealProgress(0);
             setIsRevealing(true);
             setIsSwitching(true);
-            
+
             const startTime = Date.now();
             const duration = 600;
-            
+
             const animate = () => {
                 const elapsed = Date.now() - startTime;
                 const progress = Math.min(elapsed / duration, 1);
                 setRevealProgress(progress);
-                
+
                 if (progress < 1) {
                     requestAnimationFrame(animate);
                 } else {
@@ -172,7 +176,7 @@ export default function ChatPage() {
                     setWaitingForClick(true);
                 }
             };
-            
+
             requestAnimationFrame(animate);
         }
     }, [messages, isInitialized]);
@@ -183,26 +187,26 @@ export default function ChatPage() {
             const lastMessage = messagesRef.current[messagesRef.current.length - 1];
             if (lastMessage) {
                 console.log('开始显示新消息:', lastMessage.content);
-                
+
                 setShowInputBox(false);
                 setWaitingForClick(false);
                 setWaitingForNext(false);
-                
+
                 setCurrentRevealingMessage(lastMessage);
                 setRevealProgress(0);
                 setIsRevealing(true);
                 setIsSwitching(true);
-                
+
                 setShouldShowMessage(false);
-                
+
                 const startTime = Date.now();
                 const duration = 600;
-                
+
                 const animate = () => {
                     const elapsed = Date.now() - startTime;
                     const progress = Math.min(elapsed / duration, 1);
                     setRevealProgress(progress);
-                    
+
                     if (progress < 1) {
                         requestAnimationFrame(animate);
                     } else {
@@ -210,13 +214,13 @@ export default function ChatPage() {
                         setIsRevealing(false);
                         setIsSwitching(false);
                         setWaitingForNext(true);
-                        
+
                         if (lastMessage.speaker === '莉莉丝') {
                             setWaitingForClick(true);
                         }
                     }
                 };
-                
+
                 requestAnimationFrame(animate);
             }
         }
@@ -243,7 +247,7 @@ export default function ChatPage() {
             content: userInput,
         };
         setMessages(prev => [...prev, userMessage]);
-        
+
         setInputText('');
         setShowInputBox(false);
         setWaitingForClick(false);
@@ -327,7 +331,7 @@ export default function ChatPage() {
                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0">
                     <LilithPortrait
                         bodyState={bodyState}
-                        expression={currentExpression}
+                        expression={currentExpression}  // 确保这里用的是 currentExpression
                         animated={false}
                         scale={1.9}
                         className="translate-y-170"
@@ -420,7 +424,7 @@ export default function ChatPage() {
                     onClose={() => setIsSettingsOpen(false)}
                 />
             </div>
-            
+
         </>
     );
 }

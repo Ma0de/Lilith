@@ -20,16 +20,28 @@ type MemoryCommand struct {
 type ParsedOutput struct {
 	EchoContent string
 	Commands    []MemoryCommand
+	Expression  string // 新增：表情名称
 }
 
 func ParseOutput(content string) *ParsedOutput {
 	result := &ParsedOutput{
 		EchoContent: content,
 		Commands:    make([]MemoryCommand, 0),
+		Expression:  "",
 	}
 
 	log.Printf("[Parser] 原始内容: %s", content)
 
+	// 提取表情标签 «E»emotion«/E»
+	expressionRe := regexp.MustCompile(`«E»(.*?)«/E»`)
+	expMatches := expressionRe.FindAllStringSubmatch(content, -1)
+	if len(expMatches) > 0 && len(expMatches[0]) > 1 {
+		result.Expression = strings.TrimSpace(expMatches[0][1])
+		result.EchoContent = strings.Replace(result.EchoContent, expMatches[0][0], "", 1)
+		log.Printf("[Parser] 提取到表情: %s", result.Expression)
+	}
+
+	// 提取记忆命令标签
 	commandRe := regexp.MustCompile(`«M»(.*?)«/M»`)
 	matches := commandRe.FindAllStringSubmatch(content, -1)
 	log.Printf("[Parser] 找到 %d 个命令标签", len(matches))
@@ -45,6 +57,7 @@ func ParseOutput(content string) *ParsedOutput {
 		}
 	}
 
+	// 提取 echo 内容
 	echoRe := regexp.MustCompile(`<echo>(.*?)</echo>`)
 	echoMatches := echoRe.FindStringSubmatch(result.EchoContent)
 	if len(echoMatches) > 1 {

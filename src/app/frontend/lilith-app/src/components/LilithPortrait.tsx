@@ -47,7 +47,6 @@ const fallbackExpressionMap: Record<string, string> = {
 
 let expressionMap: Record<string, string> = { ...fallbackExpressionMap };
 
-// 加载表情映射 JSON
 const loadExpressionMapping = async () => {
     try {
         const response = await fetch('/lilith/Expression_Mapping_Table.json');
@@ -63,6 +62,9 @@ const loadExpressionMapping = async () => {
         newMap['sweat_1'] = '/lilith/Expression/Lilithemo_sweat_1.png';
         newMap['sweat_2'] = '/lilith/Expression/Lilithemo_sweat_2.png';
         
+        // 更新 allExpressions
+        allExpressions = { ...fallbackExpressionMap, ...newMap };
+        
         Object.assign(expressionMap, newMap);
     } catch (error) {
         console.error('加载表情映射失败，使用备用映射:', error);
@@ -72,8 +74,7 @@ const loadExpressionMapping = async () => {
 if (typeof window !== 'undefined') {
     loadExpressionMapping();
 }
-
-const allExpressions = { ...fallbackExpressionMap };
+let allExpressions: Record<string, string> = { ...fallbackExpressionMap };
 
 export type ExpressionType = keyof typeof allExpressions;
 
@@ -122,7 +123,7 @@ interface LilithPortraitProps {
     /** 身体状态图片（基础立绘）1 或 2 */
     bodyState: 1 | 2;
     /** 当前表情（emotion 字符串） */
-    expression: ExpressionType;
+    expression: string;
     /** 是否显示过渡动画 */
     animated?: boolean;
     /** 自定义类名 */
