@@ -33,6 +33,7 @@ func main() {
 	llmBaseURL := os.Getenv("LLM_BASE_URL")
 	llmAPIKey := os.Getenv("LLM_API_KEY")
 	llmModelName := os.Getenv("LLM_MODEL_NAME")
+	ttsBaseURL := os.Getenv("TTS_BASE_URL")
 
 	if llmBaseURL == "" {
 		log.Fatal("LLM_BASE_URL 未设置")
@@ -43,9 +44,12 @@ func main() {
 	if llmModelName == "" {
 		log.Fatal("LLM_MODEL_NAME 未设置")
 	}
+	if ttsBaseURL == "" {
+		log.Fatal("TTS_BASE_URL 未设置")
+	}
 
 	server.InitAgent(llmBaseURL, llmAPIKey, llmModelName, storageGetMemory, storageSetMemory)
-
+	server.InitTTSClient(ttsBaseURL)
 	server.InitRoutes()
 
 	staticFS, err := fs.Sub(frontendFS, "web/out")

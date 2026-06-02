@@ -7,29 +7,13 @@ import Image from 'next/image';
 import SettingsOverlay from '@/components/SettingsOverlay';
 import LilithPortrait from '@/components/LilithPortrait';
 import { getWebSocketClient } from '@/lib/websocket';
-import useNotice from '@/components/Notice';  // 导入 useNotice
+import useNotice from '@/components/Notice';
 
 interface Message {
     id: number;
     speaker: string;
     content: string;
 }
-
-const getExpressionBySpeakerAndContent = (speaker: string, content: string): string => {
-    if (speaker === '莉莉丝') {
-        if (content.includes('~')) {
-            return 'joyful_laugh';
-        }
-        if (content.includes('...')) {
-            return 'neutral_slight_upset';
-        }
-        if (content.includes('？') || content.includes('?')) {
-            return 'questioning';
-        }
-        return 'calm_gentle';
-    }
-    return 'calm_gentle';
-};
 
 export default function ChatPage() {
     const router = useRouter();
@@ -54,31 +38,77 @@ export default function ChatPage() {
     const wsClientRef = useRef<ReturnType<typeof getWebSocketClient> | null>(null);
     const messagesRef = useRef(messages);
 
-    // 使用通知 Hook
-    const { warning } = useNotice();
+    const audioRef = useRef<HTMLAudioElement | null>(null);
+    const [isAudioPlaying, setIsAudioPlaying] = useState(false);
+    const audioQueueRef = useRef<string[]>([]);
+    const isPlayingRef = useRef(false);
 
-    // 标记是否已经初始化过 WebSocket
+    const { warning } = useNotice();
     const isWsInitialized = useRef(false);
 
-    useEffect(() => {
-    console.log('currentExpression 已更新为:', currentExpression);
-}, [currentExpression]);
-
-    // 保持 messagesRef 同步
     useEffect(() => {
         messagesRef.current = messages;
     }, [messages]);
 
-    // WebSocket 连接 - 只执行一次
+    // 停止音频播放 - 移到 useEffect 之前
+    const stopAudio = useCallback(() => {
+        if (audioRef.current) {
+            audioRef.current.pause();
+            audioRef.current.currentTime = 0;
+            setIsAudioPlaying(false);
+            isPlayingRef.current = false;
+        }
+        audioQueueRef.current = [];
+    }, []);
+
+    // 播放音频 - 移到 useEffect 之前
+    const playAudio = useCallback((base64Audio: string, format: string = 'wav') => {
+        const audioData = `data:audio/${format};base64,${base64Audio}`;
+
+        if (audioRef.current) {
+            audioRef.current.pause();
+            audioRef.current.src = audioData;
+            audioRef.current.load();
+            audioRef.current.play().catch(err => {
+                console.error('音频播放失败:', err);
+            });
+            setIsAudioPlaying(true);
+            isPlayingRef.current = true;
+
+            audioRef.current.onended = () => {
+                setIsAudioPlaying(false);
+                isPlayingRef.current = false;
+                if (audioQueueRef.current.length > 0) {
+                    const next = audioQueueRef.current.shift();
+                    if (next) {
+                        const audio = new Audio(next);
+                        audio.play();
+                    }
+                }
+            };
+        } else {
+            const audio = new Audio(audioData);
+            audio.play().catch(err => {
+                console.error('音频播放失败:', err);
+            });
+            setIsAudioPlaying(true);
+            isPlayingRef.current = true;
+            audio.onended = () => {
+                setIsAudioPlaying(false);
+                isPlayingRef.current = false;
+            };
+            audioRef.current = audio;
+        }
+    }, []);
+
+    // WebSocket 连接
     useEffect(() => {
         if (isWsInitialized.current) return;
         isWsInitialized.current = true;
 
-        // 获取客户端实例
         const client = getWebSocketClient();
         wsClientRef.current = client;
 
-        // 设置断开连接时的回调 - 弹通知
         client.setDisconnectCallback(() => {
             console.log('WebSocket 断开，准备弹通知');
             warning('与应用的 WebSocket 连接断开', {
@@ -98,27 +128,35 @@ export default function ChatPage() {
             console.error('WebSocket 错误回调:', error);
         };
 
-        // 在 WebSocket onMessage 回调中
-        const removeHandler = client.onMessage((data) => {
+        const removeHandler = client.onMessage((data: any) => {
             console.log('收到消息:', data);
 
             if (data.type === 'chat' && data.speaker === 'lilith') {
                 const reply: Message = {
                     id: Date.now(),
                     speaker: '莉莉丝',
-                    content: data.content,
+                    content: data.content || '',
                 };
 
-                // 处理表情切换
                 if (data.expression) {
-                    console.log('设置表情:', data.expression);
                     setCurrentExpression(data.expression);
                 }
-                console.log('完整消息数据:', JSON.stringify(data, null, 2));
-                console.log('添加回复消息:', reply);
+
                 setMessages(prev => [...prev, reply]);
                 setIsLoading(false);
                 setShouldShowMessage(true);
+
+                if (data.audio) {
+                    console.log('收到音频，开始播放...');
+                    playAudio(data.audio, data.audioFormat || 'wav');
+                }
+            }
+
+            if (data.type === 'audio') {
+                if (data.audio) {
+                    console.log('收到独立音频消息，开始播放...');
+                    playAudio(data.audio, data.audioFormat || 'wav');
+                }
             }
         });
 
@@ -132,10 +170,10 @@ export default function ChatPage() {
             client.onClose = null;
             client.onError = null;
             isWsInitialized.current = false;
+            stopAudio();
         };
-    }, [warning]);  // 添加 warning 依赖
+    }, [warning, playAudio, stopAudio]);
 
-    // 其余代码保持不变...
     useEffect(() => {
         const savedStyle = localStorage.getItem('chatStyle');
         if (savedStyle) {
@@ -145,8 +183,6 @@ export default function ChatPage() {
         }
     }, [router]);
 
-
-    // 添加初始消息的显示逻辑
     useEffect(() => {
         if (!isInitialized && messages.length > 0) {
             console.log('初始化显示第一条消息');
@@ -181,7 +217,6 @@ export default function ChatPage() {
         }
     }, [messages, isInitialized]);
 
-    // 处理新消息显示（WebSocket 回复）
     useEffect(() => {
         if (shouldShowMessage) {
             const lastMessage = messagesRef.current[messagesRef.current.length - 1];
@@ -228,6 +263,10 @@ export default function ChatPage() {
 
     const handlePlayerTurn = () => {
         if (!waitingForClick) return;
+
+        // 停止当前播放的音频
+        stopAudio();
+
         setWaitingForClick(false);
         setShowInputBox(true);
         setCurrentRevealingMessage(null);
@@ -237,6 +276,9 @@ export default function ChatPage() {
 
     const handleSendMessage = () => {
         if (!inputText.trim() || !showInputBox) return;
+
+        // 停止音频
+        stopAudio();
 
         const userInput = inputText;
         console.log('发送消息:', userInput);
@@ -317,7 +359,6 @@ export default function ChatPage() {
                 style={{ cursor: `url('/styles/galgame/ui/cursor.png'), auto` }}
                 onClick={handleRootClick}
             >
-                {/* 背景图 */}
                 <div
                     className="absolute inset-0 opacity-40"
                     style={{
@@ -327,18 +368,16 @@ export default function ChatPage() {
                     }}
                 />
 
-                {/* 莉莉丝立绘 - 画面中心 */}
                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0">
                     <LilithPortrait
                         bodyState={bodyState}
-                        expression={currentExpression}  // 确保这里用的是 currentExpression
+                        expression={currentExpression}
                         animated={false}
                         scale={1.9}
                         className="translate-y-170"
                     />
                 </div>
 
-                {/* 返回按钮 */}
                 <button
                     onClick={(e) => {
                         e.stopPropagation();
@@ -350,7 +389,6 @@ export default function ChatPage() {
                     ← 返回
                 </button>
 
-                {/* 设置按钮 */}
                 <button
                     onClick={(e) => {
                         e.stopPropagation();
@@ -363,7 +401,6 @@ export default function ChatPage() {
                     <Settings size={22} />
                 </button>
 
-                {/* Galgame 风格对话框 - 底部 */}
                 <div className="absolute bottom-23 left-0 right-0 z-10">
                     <div className="mx-4 mb-4 rounded-2xl px-6 py-5">
                         <div
@@ -418,13 +455,11 @@ export default function ChatPage() {
                     </div>
                 </div>
 
-                {/* 全屏设置覆盖窗口 */}
                 <SettingsOverlay
                     isOpen={isSettingsOpen}
                     onClose={() => setIsSettingsOpen(false)}
                 />
             </div>
-
         </>
     );
 }

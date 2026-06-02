@@ -1,9 +1,11 @@
 package server
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"lilith-app/agent"
 	"lilith-app/llm"
+	"lilith-app/tts"
 	"log"
 	"net/http"
 	"sync"
@@ -26,7 +28,9 @@ type WSMessage struct {
 	Speaker     string                       `json:"speaker"`
 	Timestamp   int64                        `json:"timestamp"`
 	MsgID       string                       `json:"msgId,omitempty"`
-	Expression  string                       `json:"expression,omitempty"` // 新增
+	Expression  string                       `json:"expression,omitempty"`
+	Audio       string                       `json:"audio,omitempty"`
+	AudioFormat string                       `json:"audioFormat,omitempty"`
 	MemoryDelta map[string]*MemoryDeltaInput `json:"memoryDelta,omitempty"`
 }
 
@@ -38,17 +42,16 @@ type MemoryDeltaInput struct {
 
 type MessageStatus struct {
 	MsgID     string
-	Status    string // "pending", "processing", "completed", "failed"
+	Status    string
 	Content   string
 	CreatedAt time.Time
 }
 
-// 客户端连接管理器
 type ClientConnection struct {
 	conn          *websocket.Conn
 	send          chan []byte
 	clientID      string
-	pendingStatus map[string]*MessageStatus // 消息状态追踪
+	pendingStatus map[string]*MessageStatus
 	mu            sync.RWMutex
 }
 
@@ -58,6 +61,7 @@ var (
 )
 
 var globalAgent *agent.Agent
+var ttsClient *tts.TTSClient
 var agentOnce sync.Once
 
 func InitAgent(baseURL, apiKey, modelName string, getMemoryFunc func(string) (*agent.MemoryList, error), setMemoryFunc func(string, *agent.MemoryList) error) {
@@ -66,6 +70,11 @@ func InitAgent(baseURL, apiKey, modelName string, getMemoryFunc func(string) (*a
 		globalAgent = agent.NewAgent(llmClient, getMemoryFunc, setMemoryFunc)
 		log.Println("Agent初始化完成")
 	})
+}
+
+func InitTTSClient(ttsBaseURL string) {
+	ttsClient = tts.NewTTSClient(ttsBaseURL)
+	log.Println("TTS客户端初始化完成")
 }
 
 func HandleWebSocket(w http.ResponseWriter, r *http.Request) {
@@ -83,23 +92,17 @@ func HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 		pendingStatus: make(map[string]*MessageStatus),
 	}
 
-	// 注册客户端
 	clientsMu.Lock()
 	clients[clientID] = client
 	clientsMu.Unlock()
 
-	// 启动发送协程
 	go client.writePump()
-
-	// 启动心跳检测
 	go client.heartbeat()
 
 	log.Printf("客户端已连接: %s", clientID)
 
-	// 读取消息循环
 	client.readPump()
 
-	// 清理
 	client.cleanup()
 }
 
@@ -155,7 +158,6 @@ func (c *ClientConnection) writePump() {
 				return
 			}
 		case <-ticker.C:
-			// 发送心跳
 			c.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
 			if err := c.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
 				return
@@ -170,7 +172,6 @@ func (c *ClientConnection) heartbeat() {
 
 	for range ticker.C {
 		c.mu.RLock()
-		// 清理超过5分钟的消息状态
 		for id, status := range c.pendingStatus {
 			if time.Since(status.CreatedAt) > 5*time.Minute {
 				delete(c.pendingStatus, id)
@@ -201,8 +202,6 @@ func (c *ClientConnection) handleChatMessage(msg WSMessage) {
 		var replyContent string
 		var replyExpression string
 
-		log.Printf("[DEBUG] 开始处理消息 [%s], globalAgent 是否为 nil: %v", msgID, globalAgent == nil)
-
 		if globalAgent != nil {
 			var memoryDeltas map[string]*agent.MemoryDelta
 
@@ -217,9 +216,7 @@ func (c *ClientConnection) handleChatMessage(msg WSMessage) {
 				}
 			}
 
-			log.Printf("[DEBUG] 调用 ProcessMessage [%s]", msgID)
 			result, err := globalAgent.ProcessMessage(msg.Content, memoryDeltas)
-			log.Printf("[DEBUG] ProcessMessage 返回 [%s], err: %v", msgID, err)
 
 			if err != nil {
 				log.Printf("Agent处理错误 [%s]: %v", msgID, err)
@@ -228,8 +225,6 @@ func (c *ClientConnection) handleChatMessage(msg WSMessage) {
 			} else {
 				replyContent = result.Reply
 				replyExpression = result.Expression
-				log.Printf("[DEBUG] 获取到回复内容 [%s]: %s", msgID, replyContent)
-				log.Printf("[DEBUG] 获取到表情 [%s]: %s", msgID, replyExpression)
 
 				for listName, list := range result.UpdatedMemory {
 					items := make([]string, len(list.Items))
@@ -249,42 +244,47 @@ func (c *ClientConnection) handleChatMessage(msg WSMessage) {
 				}
 			}
 		} else {
-			log.Printf("[DEBUG] globalAgent 为 nil，使用模拟回复")
 			replyContent = "莉莉丝收到了: " + msg.Content
 			replyExpression = "calm_gentle"
 		}
 
-		log.Printf("[DEBUG] 准备更新状态 [%s]", msgID)
 		c.mu.Lock()
 		if status, exists := c.pendingStatus[msgID]; exists {
 			status.Status = "completed"
-			log.Printf("[DEBUG] 状态已更新为 completed [%s]", msgID)
-		} else {
-			log.Printf("[DEBUG] 找不到 pendingStatus [%s]", msgID)
 		}
 		c.mu.Unlock()
 
+		// 生成 TTS 音频（同步，等待完成）
+		var audioBase64 string
+		if ttsClient != nil && replyContent != "" &&
+			replyContent != "莉莉丝收到了: "+msg.Content &&
+			replyContent != "抱歉，我出错了" {
+			audioData, err := ttsClient.Synthesize(replyContent, replyExpression)
+			if err != nil {
+				log.Printf("TTS生成失败 [%s]: %v", msgID, err)
+			} else {
+				audioBase64 = base64.StdEncoding.EncodeToString(audioData)
+				log.Printf("TTS生成成功 [%s], 音频大小: %d bytes", msgID, len(audioData))
+			}
+		}
+
+		// 文本和音频一起发送
 		reply := WSMessage{
-			Type:       "chat",
-			Speaker:    "lilith",
-			Content:    replyContent,
-			Timestamp:  time.Now().Unix(),
-			MsgID:      msgID,
-			Expression: replyExpression,
+			Type:        "chat",
+			Speaker:     "lilith",
+			Content:     replyContent,
+			Timestamp:   time.Now().Unix(),
+			MsgID:       msgID,
+			Expression:  replyExpression,
+			Audio:       audioBase64,
+			AudioFormat: "wav",
 		}
 
-		log.Printf("准备发送回复 [%s]: %s, 表情: %s", msgID, replyContent, replyExpression)
-
-		replyData, err := json.Marshal(reply)
-		if err != nil {
-			log.Printf("[DEBUG] 序列化回复失败 [%s]: %v", msgID, err)
-			return
-		}
-
+		replyData, _ := json.Marshal(reply)
 		select {
 		case c.send <- replyData:
-			log.Printf("回复已发送 [%s]", msgID)
-		case <-time.After(5 * time.Second):
+			log.Printf("回复已发送 [%s], 包含音频: %v", msgID, audioBase64 != "")
+		case <-time.After(10 * time.Second):
 			log.Printf("发送超时 [%s]", msgID)
 		}
 	}()
@@ -315,7 +315,6 @@ func (c *ClientConnection) sendMemoryUpdate(update MemoryDeltaUpdate) {
 	}
 }
 
-// 处理状态查询
 func (c *ClientConnection) handleStatusQuery(msg WSMessage) {
 	c.mu.RLock()
 	status, exists := c.pendingStatus[msg.MsgID]
@@ -347,9 +346,7 @@ func (c *ClientConnection) handleStatusQuery(msg WSMessage) {
 	}
 }
 
-// 处理重试
 func (c *ClientConnection) handleRetry(msg WSMessage) {
-	// 重新处理消息
 	c.handleChatMessage(msg)
 }
 
