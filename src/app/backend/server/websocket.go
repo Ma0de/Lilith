@@ -6,6 +6,7 @@ import (
 	"lilith-app/agent"
 	"lilith-app/llm"
 	"lilith-app/tts"
+	"lilith-app/utils"
 	"log"
 	"net/http"
 	"sync"
@@ -20,39 +21,6 @@ type MemoryDelta = agent.MemoryDelta
 
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool { return true },
-}
-
-type WSMessage struct {
-	Type        string                       `json:"type"`
-	Content     string                       `json:"content"`
-	Speaker     string                       `json:"speaker"`
-	Timestamp   int64                        `json:"timestamp"`
-	MsgID       string                       `json:"msgId,omitempty"`
-	Expression  string                       `json:"expression,omitempty"`
-	Audio       string                       `json:"audio,omitempty"`
-	AudioFormat string                       `json:"audioFormat,omitempty"`
-	MemoryDelta map[string]*MemoryDeltaInput `json:"memoryDelta,omitempty"`
-}
-
-type MemoryDeltaInput struct {
-	ListName string   `json:"listName"`
-	Version  string   `json:"version"`
-	Items    []string `json:"items"`
-}
-
-type MessageStatus struct {
-	MsgID     string
-	Status    string
-	Content   string
-	CreatedAt time.Time
-}
-
-type ClientConnection struct {
-	conn          *websocket.Conn
-	send          chan []byte
-	clientID      string
-	pendingStatus map[string]*MessageStatus
-	mu            sync.RWMutex
 }
 
 var (
@@ -184,7 +152,7 @@ func (c *ClientConnection) heartbeat() {
 func (c *ClientConnection) handleChatMessage(msg WSMessage) {
 	msgID := msg.MsgID
 	if msgID == "" {
-		msgID = generateMsgID()
+		msgID = utils.GenerateMsgID()
 	}
 
 	c.mu.Lock()
@@ -254,7 +222,6 @@ func (c *ClientConnection) handleChatMessage(msg WSMessage) {
 		}
 		c.mu.Unlock()
 
-		// 生成 TTS 音频（同步，等待完成）
 		var audioBase64 string
 		if ttsClient != nil && replyContent != "" &&
 			replyContent != "莉莉丝收到了: "+msg.Content &&
@@ -268,7 +235,6 @@ func (c *ClientConnection) handleChatMessage(msg WSMessage) {
 			}
 		}
 
-		// 文本和音频一起发送
 		reply := WSMessage{
 			Type:        "chat",
 			Speaker:     "lilith",
@@ -288,12 +254,6 @@ func (c *ClientConnection) handleChatMessage(msg WSMessage) {
 			log.Printf("发送超时 [%s]", msgID)
 		}
 	}()
-}
-
-type MemoryDeltaUpdate struct {
-	ListName string   `json:"listName"`
-	Version  string   `json:"version"`
-	Items    []string `json:"items"`
 }
 
 func (c *ClientConnection) sendMemoryUpdate(update MemoryDeltaUpdate) {
@@ -356,17 +316,4 @@ func (c *ClientConnection) cleanup() {
 	clientsMu.Unlock()
 	close(c.send)
 	log.Printf("客户端已断开: %s", c.clientID)
-}
-
-func generateMsgID() string {
-	return time.Now().Format("20060102150405") + "-" + randomString(8)
-}
-
-func randomString(n int) string {
-	const letters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-	b := make([]byte, n)
-	for i := range b {
-		b[i] = letters[time.Now().UnixNano()%int64(len(letters))]
-	}
-	return string(b)
 }
