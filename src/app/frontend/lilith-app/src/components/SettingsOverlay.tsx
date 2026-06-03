@@ -220,7 +220,7 @@ export default function SettingsOverlay({ isOpen, onClose }: SettingsOverlayProp
                         <DisplayModeSelector
                             value={displayMode}
                             onChange={setDisplayMode}
-                            options={['窗口', '全屏', '无边框']}
+                            options={['窗口', '全屏']}
                             label="显示模式"
                         />
                     </div>
@@ -239,6 +239,7 @@ export default function SettingsOverlay({ isOpen, onClose }: SettingsOverlayProp
                     </div>
 
                     {/* 背景音乐音量 */}
+                    {/*
                     <div
                         onMouseEnter={() => handleHoverEnter(hoverMessages['背景音乐音量'])}
                         onMouseLeave={handleHoverLeave}
@@ -256,6 +257,7 @@ export default function SettingsOverlay({ isOpen, onClose }: SettingsOverlayProp
                     </div>
 
                     {/* 音效音量 */}
+                    {/*
                     <div
                         onMouseEnter={() => handleHoverEnter(hoverMessages['音效音量'])}
                         onMouseLeave={handleHoverLeave}
@@ -270,7 +272,7 @@ export default function SettingsOverlay({ isOpen, onClose }: SettingsOverlayProp
                             onMuteHover={() => handleHoverEnter(hoverMessages['静音音效'])}
                             onMuteLeave={handleHoverLeave}
                         />
-                    </div>
+                    </div>*/}
 
                     {/* 语音音量 */}
                     <div
@@ -300,7 +302,7 @@ export default function SettingsOverlay({ isOpen, onClose }: SettingsOverlayProp
                             <OptionSelector
                                 value={gameVoice}
                                 onChange={setGameVoice}
-                                options={['汉语', '日语', '英语', '法语', '德语']}
+                                options={['汉语', '日语', '英语']}
                             />
                         </div>
                         <div className="w-32" />
@@ -317,7 +319,7 @@ export default function SettingsOverlay({ isOpen, onClose }: SettingsOverlayProp
                             <OptionSelector
                                 value={gameLanguage}
                                 onChange={setGameLanguage}
-                                options={['简体中文', '繁体中文', 'English', '日本語']}
+                                options={['简体中文', '我们没做第二个语言，嘻嘻']}
                             />
                         </div>
                         <div className="w-32" />
