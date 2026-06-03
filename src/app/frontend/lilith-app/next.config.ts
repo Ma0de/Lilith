@@ -7,6 +7,20 @@ const nextConfig: NextConfig = {
   images: {
     unoptimized: true,
   },
+  // WebSocket 代理配置
+  async rewrites() {
+    return [
+      {
+        source: '/ws/:path*',
+        destination: 'http://localhost:8080/ws/:path*',
+      },
+      // 如果需要代理 WebSocket 升级请求
+      {
+        source: '/socket.io/:path*',
+        destination: 'http://localhost:8080/socket.io/:path*',
+      },
+    ];
+  },
 };
 
 export default nextConfig;

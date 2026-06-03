@@ -1,3 +1,4 @@
+// main.go
 package main
 
 import (
@@ -23,6 +24,9 @@ func main() {
 	if err != nil {
 		log.Println("未找到 .env 文件，使用系统环境变量")
 	}
+
+	// 初始化设置管理器（必须在其他初始化之前）
+	server.InitSettingsManager()
 
 	err = initStorage()
 	if err != nil {

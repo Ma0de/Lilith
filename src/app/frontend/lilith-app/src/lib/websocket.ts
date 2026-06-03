@@ -1,11 +1,49 @@
-// src/lib/websocket.ts
-
+// lib/websocket.ts
 export interface WSMessage {
     type: string;
     content: string;
     speaker: string;
     timestamp: number;
     msgId?: string;
+    expression?: string;
+    audio?: string;
+    audioFormat?: string;
+}
+
+// 基础设置类型
+export interface BasicSettings {
+    displayMode: string;
+    textSpeed: number;
+    voiceVolume: number;
+    gameVoice: string;
+    gameLanguage: string;
+}
+
+// 高级设置类型
+export interface AdvancedSettings {
+    system: {
+        webUIPort: string;
+        exposePublic: boolean;
+    };
+    llm: {
+        apiUrl: string;
+        apiKey: string;
+        modelId: string;
+        protocol: 'OpenAI' | 'Anthropic';
+    };
+    tts: {
+        useLocalTTS: boolean;
+        localTTSPort: string;
+        apiUrl: string;
+        apiKey: string;
+    };
+    memory: {
+        enabled: boolean;
+        dbPath: string;
+    };
+    session: {
+        sessionId: string;
+    };
 }
 
 export interface PendingMessage {
@@ -14,10 +52,10 @@ export interface PendingMessage {
     timestamp: number;
     retryCount: number;
     status: 'pending' | 'processing' | 'completed' | 'failed';
-    nextRetryTime?: number; // 下次重试的时间戳
+    nextRetryTime?: number;
 }
 
-// 模块级别的防重复标志（不受组件生命周期影响）
+// 模块级别的防重复标志
 let hasShownDisconnectWarning = false;
 let warningResetTimer: NodeJS.Timeout | null = null;
 
@@ -31,23 +69,30 @@ class WebSocketClient {
     private statusQueryTimer: NodeJS.Timeout | null = null;
     private retryTimers: Map<string, NodeJS.Timeout> = new Map();
 
-    // 退避策略配置
-    private readonly BASE_DELAY = 2000; // 基础延迟 2秒
-    private readonly MAX_DELAY = 50000; // 最大延迟 50秒
-    private readonly MAX_RETRY_COUNT = 5; // 最大重试次数
+    private readonly BASE_DELAY = 2000;
+    private readonly MAX_DELAY = 50000;
+    private readonly MAX_RETRY_COUNT = 5;
 
     public onOpen: (() => void) | null = null;
     public onClose: (() => void) | null = null;
     public onError: ((error: Event) => void) | null = null;
     public onMessageConfirmed: ((msgId: string) => void) | null = null;
     public onRetryUpdate: ((msgId: string, retryCount: number, nextDelay: number) => void) | null = null;
-    
-    // 断开连接时的回调函数（由外部设置）
-    private onDisconnectCallback: (() => void) | null = null;
 
-    // 设置断开时的回调函数
+    private onDisconnectCallback: (() => void) | null = null;
+    private onSettingsResponse: ((settings: BasicSettings) => void) | null = null;
+    private onAdvancedSettingsResponse: ((settings: AdvancedSettings) => void) | null = null;
+
     setDisconnectCallback(callback: (() => void) | null) {
         this.onDisconnectCallback = callback;
+    }
+
+    setSettingsCallback(callback: (settings: BasicSettings) => void) {
+        this.onSettingsResponse = callback;
+    }
+
+    setAdvancedSettingsCallback(callback: (settings: AdvancedSettings) => void) {
+        this.onAdvancedSettingsResponse = callback;
     }
 
     connect() {
@@ -75,43 +120,63 @@ class WebSocketClient {
         this.isConnecting = true;
         this.shouldReconnect = true;
 
+        // 硬编码连接地址
         console.log('开始连接 WebSocket...');
         this.ws = new WebSocket('ws://localhost:8080/ws');
 
         this.ws.onopen = () => {
             console.log('WebSocket 已连接');
             this.isConnecting = false;
-            // 连接成功后重置模块级标志
             hasShownDisconnectWarning = false;
             if (warningResetTimer) {
                 clearTimeout(warningResetTimer);
                 warningResetTimer = null;
             }
             this.onOpen?.();
-
-            // 连接成功后，检查待处理消息
             this.checkPendingMessages();
             this.startStatusQueryLoop();
         };
 
         this.ws.onmessage = (e) => {
-            console.log('原始消息:', e.data);
             try {
                 const data = JSON.parse(e.data) as WSMessage;
+                console.log('收到消息:', data.type, data);
 
-                // 处理状态响应
-                if (data.type === 'status_response') {
-                    this.handleStatusResponse(data);
-                }
-                // 处理聊天回复
-                else if (data.type === 'chat' && data.msgId) {
-                    // 标记消息为已完成
-                    if (this.pendingMessages.has(data.msgId)) {
-                        this.clearRetryTimer(data.msgId);
-                        this.pendingMessages.delete(data.msgId);
-                        this.onMessageConfirmed?.(data.msgId);
-                        console.log(`消息 ${data.msgId} 已被确认完成`);
-                    }
+                switch (data.type) {
+                    case 'status_response':
+                        this.handleStatusResponse(data);
+                        break;
+                    case 'settings_response':
+                        if (data.content && this.onSettingsResponse) {
+                            const settings = JSON.parse(data.content) as BasicSettings;
+                            this.onSettingsResponse(settings);
+                        }
+                        break;
+                    case 'advanced_settings_response':
+                        if (data.content && this.onAdvancedSettingsResponse) {
+                            const settings = JSON.parse(data.content) as AdvancedSettings;
+                            this.onAdvancedSettingsResponse(settings);
+                        }
+                        break;
+                    case 'settings_update_response':
+                    case 'advanced_settings_update_response':
+                        console.log('设置更新成功:', data.type);
+                        break;
+                    case 'tts_launch_response':
+                        console.log('TTS启动响应:', data.content);
+                        break;
+                    case 'delete_session_response':
+                    case 'compress_session_response':
+                        console.log('会话操作响应:', data.type, data.content);
+                        break;
+                    case 'chat':
+                        if (data.msgId && this.pendingMessages.has(data.msgId)) {
+                            this.clearRetryTimer(data.msgId);
+                            this.pendingMessages.delete(data.msgId);
+                            this.onMessageConfirmed?.(data.msgId);
+                            console.log(`消息 ${data.msgId} 已被确认完成`);
+                        }
+                        break;
                 }
 
                 this.handlers.forEach(fn => fn(data));
@@ -126,24 +191,17 @@ class WebSocketClient {
             this.stopStatusQueryLoop();
             this.onClose?.();
 
-            // 只有当不是正常关闭时，才触发断开回调
             if (event.code !== 1000 && this.onDisconnectCallback) {
-                // 模块级别的防重复检查（不受 React 组件生命周期影响）
                 if (!hasShownDisconnectWarning) {
                     hasShownDisconnectWarning = true;
-                    console.log('[WebSocket] 首次断开，调用回调弹窗');
                     this.onDisconnectCallback();
                     
-                    // 5秒后重置标志，允许下次断开再弹
                     if (warningResetTimer) {
                         clearTimeout(warningResetTimer);
                     }
                     warningResetTimer = setTimeout(() => {
-                        console.log('[WebSocket] 重置断开弹窗标志');
                         hasShownDisconnectWarning = false;
                     }, 5000);
-                } else {
-                    console.log('[WebSocket] 已有弹窗，跳过重复调用');
                 }
             }
 
@@ -159,14 +217,13 @@ class WebSocketClient {
         };
     }
 
-    // 计算退避延迟（指数退避，上限50秒）
+    private reconnectAttemptCount = 0;
+
     private calculateBackoffDelay(retryCount: number): number {
         const delay = this.BASE_DELAY * Math.pow(2, retryCount - 1);
         return Math.min(delay, this.MAX_DELAY);
     }
 
-    // 调度重连
-    private reconnectAttemptCount = 0;
     private scheduleReconnect() {
         if (this.reconnectTimer) {
             clearTimeout(this.reconnectTimer);
@@ -181,17 +238,198 @@ class WebSocketClient {
         }, delay);
     }
 
-    // 重置重连计数器（连接成功后调用）
     private resetReconnectCounter() {
         this.reconnectAttemptCount = 0;
     }
 
-    // 检查待处理消息的状态
+    // 获取基础设置
+    getSettings(): void {
+        if (!this.isConnected()) {
+            console.warn('WebSocket 未连接，无法获取设置');
+            return;
+        }
+
+        const message: WSMessage = {
+            type: 'get_settings',
+            content: '',
+            speaker: 'system',
+            timestamp: Date.now(),
+        };
+        this.ws?.send(JSON.stringify(message));
+        console.log('请求基础设置');
+    }
+
+    // 更新基础设置
+    updateSettings(settings: BasicSettings): void {
+        if (!this.isConnected()) {
+            console.warn('WebSocket 未连接，无法更新设置');
+            return;
+        }
+
+        const message: WSMessage = {
+            type: 'update_settings',
+            content: JSON.stringify(settings),
+            speaker: 'system',
+            timestamp: Date.now(),
+        };
+        this.ws?.send(JSON.stringify(message));
+        console.log('更新基础设置:', settings);
+    }
+
+    // 获取高级设置
+    getAdvancedSettings(): void {
+        if (!this.isConnected()) {
+            console.warn('WebSocket 未连接，无法获取高级设置');
+            return;
+        }
+
+        const message: WSMessage = {
+            type: 'get_advanced_settings',
+            content: '',
+            speaker: 'system',
+            timestamp: Date.now(),
+        };
+        this.ws?.send(JSON.stringify(message));
+        console.log('请求高级设置');
+    }
+
+    // 更新高级设置
+    updateAdvancedSettings(settings: AdvancedSettings): void {
+        if (!this.isConnected()) {
+            console.warn('WebSocket 未连接，无法更新高级设置');
+            return;
+        }
+
+        const message: WSMessage = {
+            type: 'update_advanced_settings',
+            content: JSON.stringify(settings),
+            speaker: 'system',
+            timestamp: Date.now(),
+        };
+        this.ws?.send(JSON.stringify(message));
+        console.log('更新高级设置');
+    }
+
+    // 启动本地TTS
+    launchTTS(localPort: string): Promise<{ status: string; message: string }> {
+        return new Promise((resolve, reject) => {
+            if (!this.isConnected()) {
+                reject(new Error('WebSocket 未连接'));
+                return;
+            }
+
+            const msgId = this.generateMsgId();
+            const timeout = setTimeout(() => {
+                reject(new Error('TTS启动请求超时'));
+            }, 10000);
+
+            const handler = (data: WSMessage) => {
+                if (data.type === 'tts_launch_response' && data.msgId === msgId) {
+                    clearTimeout(timeout);
+                    try {
+                        const result = JSON.parse(data.content);
+                        resolve(result);
+                    } catch {
+                        resolve({ status: 'failed', message: data.content });
+                    }
+                    this.handlers = this.handlers.filter(h => h !== handler);
+                }
+            };
+
+            this.handlers.push(handler);
+
+            const message: WSMessage = {
+                type: 'launch_tts',
+                content: JSON.stringify({ port: localPort }),
+                speaker: 'system',
+                timestamp: Date.now(),
+                msgId: msgId,
+            };
+            this.ws?.send(JSON.stringify(message));
+        });
+    }
+
+    // 删除会话
+    deleteSession(sessionId: string): Promise<{ status: string; message: string }> {
+        return new Promise((resolve, reject) => {
+            if (!this.isConnected()) {
+                reject(new Error('WebSocket 未连接'));
+                return;
+            }
+
+            const msgId = this.generateMsgId();
+            const timeout = setTimeout(() => {
+                reject(new Error('删除会话请求超时'));
+            }, 10000);
+
+            const handler = (data: WSMessage) => {
+                if (data.type === 'delete_session_response' && data.msgId === msgId) {
+                    clearTimeout(timeout);
+                    try {
+                        const result = JSON.parse(data.content);
+                        resolve(result);
+                    } catch {
+                        resolve({ status: 'failed', message: data.content });
+                    }
+                    this.handlers = this.handlers.filter(h => h !== handler);
+                }
+            };
+
+            this.handlers.push(handler);
+
+            const message: WSMessage = {
+                type: 'delete_session',
+                content: JSON.stringify({ sessionId }),
+                speaker: 'system',
+                timestamp: Date.now(),
+                msgId: msgId,
+            };
+            this.ws?.send(JSON.stringify(message));
+        });
+    }
+
+    // 压缩会话
+    compressSession(sessionId: string): Promise<{ status: string; message: string }> {
+        return new Promise((resolve, reject) => {
+            if (!this.isConnected()) {
+                reject(new Error('WebSocket 未连接'));
+                return;
+            }
+
+            const msgId = this.generateMsgId();
+            const timeout = setTimeout(() => {
+                reject(new Error('压缩会话请求超时'));
+            }, 10000);
+
+            const handler = (data: WSMessage) => {
+                if (data.type === 'compress_session_response' && data.msgId === msgId) {
+                    clearTimeout(timeout);
+                    try {
+                        const result = JSON.parse(data.content);
+                        resolve(result);
+                    } catch {
+                        resolve({ status: 'failed', message: data.content });
+                    }
+                    this.handlers = this.handlers.filter(h => h !== handler);
+                }
+            };
+
+            this.handlers.push(handler);
+
+            const message: WSMessage = {
+                type: 'compress_session',
+                content: JSON.stringify({ sessionId }),
+                speaker: 'system',
+                timestamp: Date.now(),
+                msgId: msgId,
+            };
+            this.ws?.send(JSON.stringify(message));
+        });
+    }
+
     private async checkPendingMessages() {
         if (this.pendingMessages.size === 0) return;
-
         console.log(`检查 ${this.pendingMessages.size} 条待处理消息`);
-
         for (const [msgId, pending] of this.pendingMessages) {
             if (pending.status === 'pending' || pending.status === 'processing') {
                 if (pending.nextRetryTime && Date.now() >= pending.nextRetryTime) {
@@ -203,7 +441,6 @@ class WebSocketClient {
         }
     }
 
-    // 查询消息状态
     private async queryMessageStatus(msgId: string) {
         if (!this.isConnected()) {
             console.log(`WebSocket 未连接，无法查询消息 ${msgId} 的状态`);
@@ -217,12 +454,10 @@ class WebSocketClient {
             timestamp: Date.now(),
             msgId: msgId
         };
-
         this.ws?.send(JSON.stringify(queryMsg));
         console.log(`查询消息状态: ${msgId}`);
     }
 
-    // 处理状态响应
     private handleStatusResponse(data: WSMessage) {
         const msgId = data.msgId;
         if (!msgId) return;
@@ -237,10 +472,10 @@ class WebSocketClient {
             case 'failed':
                 if (pending.retryCount < this.MAX_RETRY_COUNT) {
                     const nextDelay = this.calculateBackoffDelay(pending.retryCount + 1);
-                    console.log(`消息 ${msgId} 未处理完成，将在 ${nextDelay / 1000}秒后重试 (${pending.retryCount + 1}/${this.MAX_RETRY_COUNT})`);
+                    console.log(`消息 ${msgId} 未处理完成，将在 ${nextDelay / 1000}秒后重试`);
                     this.scheduleRetry(msgId, nextDelay);
                 } else {
-                    console.error(`消息 ${msgId} 重试次数已达上限 (${this.MAX_RETRY_COUNT}次)，放弃重试`);
+                    console.error(`消息 ${msgId} 重试次数已达上限，放弃重试`);
                     this.clearRetryTimer(msgId);
                     this.pendingMessages.delete(msgId);
                     this.handlers.forEach(fn => fn({
@@ -263,10 +498,8 @@ class WebSocketClient {
         }
     }
 
-    // 调度重试（带指数退避）
     private scheduleRetry(msgId: string, delay: number) {
         this.clearRetryTimer(msgId);
-
         const pending = this.pendingMessages.get(msgId);
         if (!pending) return;
 
@@ -276,11 +509,9 @@ class WebSocketClient {
         const timer = setTimeout(() => {
             this.executeRetry(msgId);
         }, delay);
-
         this.retryTimers.set(msgId, timer);
     }
 
-    // 清除重试定时器
     private clearRetryTimer(msgId: string) {
         const timer = this.retryTimers.get(msgId);
         if (timer) {
@@ -289,7 +520,6 @@ class WebSocketClient {
         }
     }
 
-    // 清除所有重试定时器
     private clearAllRetryTimers() {
         for (const timer of this.retryTimers.values()) {
             clearTimeout(timer);
@@ -297,7 +527,6 @@ class WebSocketClient {
         this.retryTimers.clear();
     }
 
-    // 执行重试
     private executeRetry(msgId: string) {
         const pending = this.pendingMessages.get(msgId);
         if (!pending) return;
@@ -325,10 +554,8 @@ class WebSocketClient {
         }
     }
 
-    // 启动状态查询循环
     private startStatusQueryLoop() {
         this.stopStatusQueryLoop();
-
         this.statusQueryTimer = setInterval(() => {
             if (this.isConnected() && this.pendingMessages.size > 0) {
                 for (const [msgId, pending] of this.pendingMessages) {
@@ -341,7 +568,6 @@ class WebSocketClient {
         }, 5000);
     }
 
-    // 停止状态查询循环
     private stopStatusQueryLoop() {
         if (this.statusQueryTimer) {
             clearInterval(this.statusQueryTimer);
