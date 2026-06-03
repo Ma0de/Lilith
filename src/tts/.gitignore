@@ -2,3 +2,5 @@ Qwen3-TTS-1.7B-Base
 *.pyc
 *.pyo
 __pycache__/
+build
+dist
