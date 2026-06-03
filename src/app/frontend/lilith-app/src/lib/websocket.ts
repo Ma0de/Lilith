@@ -12,11 +12,11 @@ export interface WSMessage {
 
 // 基础设置类型
 export interface BasicSettings {
-    displayMode: string;
-    textSpeed: number;
-    voiceVolume: number;
-    gameVoice: string;
-    gameLanguage: string;
+    displayMode?: string;
+    textSpeed?: number;
+    voiceVolume?: number;
+    gameVoice?: string;
+    gameLanguage?: string;
 }
 
 // 高级设置类型
@@ -62,7 +62,7 @@ let warningResetTimer: NodeJS.Timeout | null = null;
 class WebSocketClient {
     private ws: WebSocket | null = null;
     private handlers: ((data: WSMessage) => void)[] = [];
-    private isConnecting = false;
+    private isWsConnecting = false;
     private reconnectTimer: NodeJS.Timeout | null = null;
     private shouldReconnect = true;
     private pendingMessages: Map<string, PendingMessage> = new Map();
@@ -82,6 +82,7 @@ class WebSocketClient {
     private onDisconnectCallback: (() => void) | null = null;
     private onSettingsResponse: ((settings: BasicSettings) => void) | null = null;
     private onAdvancedSettingsResponse: ((settings: AdvancedSettings) => void) | null = null;
+    private reconnectAttemptCount = 0;
 
     setDisconnectCallback(callback: (() => void) | null) {
         this.onDisconnectCallback = callback;
@@ -93,6 +94,10 @@ class WebSocketClient {
 
     setAdvancedSettingsCallback(callback: (settings: AdvancedSettings) => void) {
         this.onAdvancedSettingsResponse = callback;
+    }
+
+    isConnecting(): boolean {
+        return this.isWsConnecting || this.ws?.readyState === WebSocket.CONNECTING;
     }
 
     connect() {
@@ -112,26 +117,20 @@ class WebSocketClient {
             return;
         }
 
-        if (this.isConnecting) {
+        if (this.isWsConnecting) {
             console.log('防止重复连接');
             return;
         }
 
-        this.isConnecting = true;
+        this.isWsConnecting = true;
         this.shouldReconnect = true;
 
-        // 硬编码连接地址
         console.log('开始连接 WebSocket...');
         this.ws = new WebSocket('ws://localhost:8080/ws');
 
         this.ws.onopen = () => {
             console.log('WebSocket 已连接');
-            this.isConnecting = false;
-            hasShownDisconnectWarning = false;
-            if (warningResetTimer) {
-                clearTimeout(warningResetTimer);
-                warningResetTimer = null;
-            }
+            this.isWsConnecting = false;
             this.onOpen?.();
             this.checkPendingMessages();
             this.startStatusQueryLoop();
@@ -187,22 +186,12 @@ class WebSocketClient {
 
         this.ws.onclose = (event) => {
             console.log(`WebSocket 已断开 (code: ${event.code}, reason: ${event.reason})`);
-            this.isConnecting = false;
+            this.isWsConnecting = false;
             this.stopStatusQueryLoop();
             this.onClose?.();
 
             if (event.code !== 1000 && this.onDisconnectCallback) {
-                if (!hasShownDisconnectWarning) {
-                    hasShownDisconnectWarning = true;
-                    this.onDisconnectCallback();
-                    
-                    if (warningResetTimer) {
-                        clearTimeout(warningResetTimer);
-                    }
-                    warningResetTimer = setTimeout(() => {
-                        hasShownDisconnectWarning = false;
-                    }, 5000);
-                }
+                this.onDisconnectCallback();
             }
 
             if (this.shouldReconnect && event.code !== 1000) {
@@ -212,12 +201,10 @@ class WebSocketClient {
 
         this.ws.onerror = (error) => {
             console.error('WebSocket 错误:', error);
-            this.isConnecting = false;
+            this.isWsConnecting = false;
             this.onError?.(error);
         };
     }
-
-    private reconnectAttemptCount = 0;
 
     private calculateBackoffDelay(retryCount: number): number {
         const delay = this.BASE_DELAY * Math.pow(2, retryCount - 1);
@@ -238,11 +225,6 @@ class WebSocketClient {
         }, delay);
     }
 
-    private resetReconnectCounter() {
-        this.reconnectAttemptCount = 0;
-    }
-
-    // 获取基础设置
     getSettings(): void {
         if (!this.isConnected()) {
             console.warn('WebSocket 未连接，无法获取设置');
@@ -259,7 +241,6 @@ class WebSocketClient {
         console.log('请求基础设置');
     }
 
-    // 更新基础设置
     updateSettings(settings: BasicSettings): void {
         if (!this.isConnected()) {
             console.warn('WebSocket 未连接，无法更新设置');
@@ -276,7 +257,6 @@ class WebSocketClient {
         console.log('更新基础设置:', settings);
     }
 
-    // 获取高级设置
     getAdvancedSettings(): void {
         if (!this.isConnected()) {
             console.warn('WebSocket 未连接，无法获取高级设置');
@@ -293,7 +273,6 @@ class WebSocketClient {
         console.log('请求高级设置');
     }
 
-    // 更新高级设置
     updateAdvancedSettings(settings: AdvancedSettings): void {
         if (!this.isConnected()) {
             console.warn('WebSocket 未连接，无法更新高级设置');
@@ -310,7 +289,6 @@ class WebSocketClient {
         console.log('更新高级设置');
     }
 
-    // 启动本地TTS
     launchTTS(localPort: string): Promise<{ status: string; message: string }> {
         return new Promise((resolve, reject) => {
             if (!this.isConnected()) {
@@ -349,7 +327,6 @@ class WebSocketClient {
         });
     }
 
-    // 删除会话
     deleteSession(sessionId: string): Promise<{ status: string; message: string }> {
         return new Promise((resolve, reject) => {
             if (!this.isConnected()) {
@@ -388,7 +365,6 @@ class WebSocketClient {
         });
     }
 
-    // 压缩会话
     compressSession(sessionId: string): Promise<{ status: string; message: string }> {
         return new Promise((resolve, reject) => {
             if (!this.isConnected()) {
@@ -504,7 +480,6 @@ class WebSocketClient {
         if (!pending) return;
 
         pending.nextRetryTime = Date.now() + delay;
-        this.onRetryUpdate?.(msgId, pending.retryCount + 1, delay);
 
         const timer = setTimeout(() => {
             this.executeRetry(msgId);
@@ -619,7 +594,7 @@ class WebSocketClient {
     }
 
     private generateMsgId(): string {
-        return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        return `${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
     }
 
     isConnected(): boolean {

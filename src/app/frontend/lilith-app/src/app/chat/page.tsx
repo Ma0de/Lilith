@@ -4,10 +4,10 @@ import { useEffect, useState, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { Settings } from 'lucide-react';
 import Image from 'next/image';
-import SettingsOverlay from '@/components/SettingsOverlay';
 import LilithPortrait from '@/components/LilithPortrait';
-import { getWebSocketClient } from '@/lib/websocket';
 import useNotice from '@/components/Notice';
+import { getWebSocketClient, BasicSettings } from '@/lib/websocket';
+import SettingsOverlay, { getGlobalTextSpeed, getGlobalVoiceVolume, setGlobalTextSpeed, setGlobalVoiceVolume } from '@/components/SettingsOverlay';
 
 interface Message {
     id: number;
@@ -35,22 +35,74 @@ export default function ChatPage() {
     const [isLoading, setIsLoading] = useState(false);
     const [shouldShowMessage, setShouldShowMessage] = useState(false);
     const [isInitialized, setIsInitialized] = useState(false);
+    const [textSpeed, setTextSpeed] = useState(70);
+    const [voiceVolume, setVoiceVolume] = useState(80);
+    const [displayMode, setDisplayMode] = useState<string>('窗口');
     const wsClientRef = useRef<ReturnType<typeof getWebSocketClient> | null>(null);
     const messagesRef = useRef(messages);
+    const hasShownFullscreenTip = useRef(false);
 
     const audioRef = useRef<HTMLAudioElement | null>(null);
     const [isAudioPlaying, setIsAudioPlaying] = useState(false);
     const audioQueueRef = useRef<string[]>([]);
     const isPlayingRef = useRef(false);
 
-    const { warning } = useNotice();
+    const { warning, info } = useNotice();
     const isWsInitialized = useRef(false);
+    const settingsLoadedRef = useRef(false);
 
     useEffect(() => {
         messagesRef.current = messages;
     }, [messages]);
 
-    // 停止音频播放 - 移到 useEffect 之前
+    useEffect(() => {
+        const handleFullscreenChange = () => {
+            const isFullscreen = !!document.fullscreenElement;
+            const newMode = isFullscreen ? '全屏' : '窗口';
+            if (newMode !== displayMode) {
+                setDisplayMode(newMode);
+                const client = wsClientRef.current;
+                if (client?.isConnected()) {
+                    client.updateSettings({
+                        displayMode: newMode,
+                        textSpeed: textSpeed,
+                        voiceVolume: voiceVolume,
+                        gameVoice: '汉语',
+                        gameLanguage: '简体中文'
+                    });
+                }
+            }
+        };
+
+        document.addEventListener('fullscreenchange', handleFullscreenChange);
+        return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+    }, [displayMode, textSpeed, voiceVolume]);
+
+    useEffect(() => {
+        const handleTextSpeedChange = (e: CustomEvent) => {
+            setTextSpeed(e.detail.speed);
+        };
+        window.addEventListener('textSpeedChange', handleTextSpeedChange as EventListener);
+        setTextSpeed(getGlobalTextSpeed());
+        return () => window.removeEventListener('textSpeedChange', handleTextSpeedChange as EventListener);
+    }, []);
+
+    useEffect(() => {
+        const handleVoiceVolumeChange = (e: CustomEvent) => {
+            setVoiceVolume(e.detail.volume);
+            if (audioRef.current) {
+                audioRef.current.volume = e.detail.volume / 100;
+            }
+        };
+        window.addEventListener('voiceVolumeChange', handleVoiceVolumeChange as EventListener);
+        const initialVolume = getGlobalVoiceVolume();
+        setVoiceVolume(initialVolume);
+        if (audioRef.current) {
+            audioRef.current.volume = initialVolume / 100;
+        }
+        return () => window.removeEventListener('voiceVolumeChange', handleVoiceVolumeChange as EventListener);
+    }, []);
+
     const stopAudio = useCallback(() => {
         if (audioRef.current) {
             audioRef.current.pause();
@@ -61,47 +113,52 @@ export default function ChatPage() {
         audioQueueRef.current = [];
     }, []);
 
-    // 播放音频 - 移到 useEffect 之前
     const playAudio = useCallback((base64Audio: string, format: string = 'wav') => {
         const audioData = `data:audio/${format};base64,${base64Audio}`;
 
-        if (audioRef.current) {
-            audioRef.current.pause();
-            audioRef.current.src = audioData;
-            audioRef.current.load();
-            audioRef.current.play().catch(err => {
-                console.error('音频播放失败:', err);
-            });
-            setIsAudioPlaying(true);
-            isPlayingRef.current = true;
+        const play = () => {
+            if (audioRef.current) {
+                audioRef.current.pause();
+                audioRef.current.src = audioData;
+                audioRef.current.load();
+                audioRef.current.volume = voiceVolume / 100;
+                audioRef.current.play().catch(err => {
+                    console.error('音频播放失败:', err);
+                });
+                setIsAudioPlaying(true);
+                isPlayingRef.current = true;
 
-            audioRef.current.onended = () => {
-                setIsAudioPlaying(false);
-                isPlayingRef.current = false;
-                if (audioQueueRef.current.length > 0) {
-                    const next = audioQueueRef.current.shift();
-                    if (next) {
-                        const audio = new Audio(next);
-                        audio.play();
+                audioRef.current.onended = () => {
+                    setIsAudioPlaying(false);
+                    isPlayingRef.current = false;
+                    if (audioQueueRef.current.length > 0) {
+                        const next = audioQueueRef.current.shift();
+                        if (next) {
+                            const audio = new Audio(next);
+                            audio.volume = voiceVolume / 100;
+                            audio.play();
+                        }
                     }
-                }
-            };
-        } else {
-            const audio = new Audio(audioData);
-            audio.play().catch(err => {
-                console.error('音频播放失败:', err);
-            });
-            setIsAudioPlaying(true);
-            isPlayingRef.current = true;
-            audio.onended = () => {
-                setIsAudioPlaying(false);
-                isPlayingRef.current = false;
-            };
-            audioRef.current = audio;
-        }
-    }, []);
+                };
+            } else {
+                const audio = new Audio(audioData);
+                audio.volume = voiceVolume / 100;
+                audio.play().catch(err => {
+                    console.error('音频播放失败:', err);
+                });
+                setIsAudioPlaying(true);
+                isPlayingRef.current = true;
+                audio.onended = () => {
+                    setIsAudioPlaying(false);
+                    isPlayingRef.current = false;
+                };
+                audioRef.current = audio;
+            }
+        };
 
-    // WebSocket 连接
+        play();
+    }, [voiceVolume]);
+
     useEffect(() => {
         if (isWsInitialized.current) return;
         isWsInitialized.current = true;
@@ -110,27 +167,48 @@ export default function ChatPage() {
         wsClientRef.current = client;
 
         client.setDisconnectCallback(() => {
-            console.log('WebSocket 断开，准备弹通知');
             warning('与应用的 WebSocket 连接断开', {
                 title: 'NET_WS_CONN_FAIL',
             });
         });
 
         client.onOpen = () => {
-            console.log('WebSocket 连接成功回调');
+            client.getSettings();
         };
 
         client.onClose = () => {
-            console.log('WebSocket 断开回调（正常关闭）');
+            console.log('WebSocket 断开');
         };
 
         client.onError = (error) => {
-            console.error('WebSocket 错误回调:', error);
+            console.error('WebSocket 错误:', error);
         };
 
-        const removeHandler = client.onMessage((data: any) => {
-            console.log('收到消息:', data);
+        client.setSettingsCallback((settings: BasicSettings) => {
+            if (settings.textSpeed !== undefined) {
+                setTextSpeed(settings.textSpeed);
+                setGlobalTextSpeed(settings.textSpeed);
+            }
 
+            if (settings.voiceVolume !== undefined) {
+                setVoiceVolume(settings.voiceVolume);
+                setGlobalVoiceVolume(settings.voiceVolume);
+                const audioElements = document.querySelectorAll('audio');
+                audioElements.forEach(audio => {
+                    if (settings.voiceVolume !== undefined) {
+                        audio.volume = settings.voiceVolume / 100;
+                    }
+                });
+            }
+
+            if (settings.displayMode) {
+                setDisplayMode(settings.displayMode);
+            }
+
+            settingsLoadedRef.current = true;
+        });
+
+        const removeHandler = client.onMessage((data: any) => {
             if (data.type === 'chat' && data.speaker === 'lilith') {
                 const reply: Message = {
                     id: Date.now(),
@@ -147,24 +225,26 @@ export default function ChatPage() {
                 setShouldShowMessage(true);
 
                 if (data.audio) {
-                    console.log('收到音频，开始播放...');
                     playAudio(data.audio, data.audioFormat || 'wav');
                 }
             }
 
             if (data.type === 'audio') {
                 if (data.audio) {
-                    console.log('收到独立音频消息，开始播放...');
                     playAudio(data.audio, data.audioFormat || 'wav');
                 }
             }
         });
 
-        client.connect();
+        if (client.isConnected()) {
+            client.getSettings();
+        } else {
+            client.connect();
+        }
 
         return () => {
-            console.log('组件卸载，移除消息处理器');
             removeHandler();
+            client.setSettingsCallback(() => { });
             client.setDisconnectCallback(null);
             client.onOpen = null;
             client.onClose = null;
@@ -183,9 +263,31 @@ export default function ChatPage() {
         }
     }, [router]);
 
+    const getRevealDuration = useCallback(() => {
+        return Math.max(150, 1000 - (textSpeed / 100) * 850);
+    }, [textSpeed]);
+
+    const startRevealAnimation = useCallback((message: Message, onComplete: () => void) => {
+        const duration = getRevealDuration();
+        const startTime = Date.now();
+
+        const animate = () => {
+            const elapsed = Date.now() - startTime;
+            const progress = Math.min(elapsed / duration, 1);
+            setRevealProgress(progress);
+
+            if (progress < 1) {
+                requestAnimationFrame(animate);
+            } else {
+                onComplete();
+            }
+        };
+
+        requestAnimationFrame(animate);
+    }, [getRevealDuration]);
+
     useEffect(() => {
         if (!isInitialized && messages.length > 0) {
-            console.log('初始化显示第一条消息');
             setIsInitialized(true);
 
             const firstMessage = messages[0];
@@ -194,35 +296,19 @@ export default function ChatPage() {
             setIsRevealing(true);
             setIsSwitching(true);
 
-            const startTime = Date.now();
-            const duration = 600;
-
-            const animate = () => {
-                const elapsed = Date.now() - startTime;
-                const progress = Math.min(elapsed / duration, 1);
-                setRevealProgress(progress);
-
-                if (progress < 1) {
-                    requestAnimationFrame(animate);
-                } else {
-                    console.log('初始消息显示完成');
-                    setIsRevealing(false);
-                    setIsSwitching(false);
-                    setWaitingForNext(true);
-                    setWaitingForClick(true);
-                }
-            };
-
-            requestAnimationFrame(animate);
+            startRevealAnimation(firstMessage, () => {
+                setIsRevealing(false);
+                setIsSwitching(false);
+                setWaitingForNext(true);
+                setWaitingForClick(true);
+            });
         }
-    }, [messages, isInitialized]);
+    }, [messages, isInitialized, startRevealAnimation]);
 
     useEffect(() => {
         if (shouldShowMessage) {
             const lastMessage = messagesRef.current[messagesRef.current.length - 1];
             if (lastMessage) {
-                console.log('开始显示新消息:', lastMessage.content);
-
                 setShowInputBox(false);
                 setWaitingForClick(false);
                 setWaitingForNext(false);
@@ -234,37 +320,22 @@ export default function ChatPage() {
 
                 setShouldShowMessage(false);
 
-                const startTime = Date.now();
-                const duration = 600;
+                startRevealAnimation(lastMessage, () => {
+                    setIsRevealing(false);
+                    setIsSwitching(false);
+                    setWaitingForNext(true);
 
-                const animate = () => {
-                    const elapsed = Date.now() - startTime;
-                    const progress = Math.min(elapsed / duration, 1);
-                    setRevealProgress(progress);
-
-                    if (progress < 1) {
-                        requestAnimationFrame(animate);
-                    } else {
-                        console.log('消息显示完成');
-                        setIsRevealing(false);
-                        setIsSwitching(false);
-                        setWaitingForNext(true);
-
-                        if (lastMessage.speaker === '莉莉丝') {
-                            setWaitingForClick(true);
-                        }
+                    if (lastMessage.speaker === '莉莉丝') {
+                        setWaitingForClick(true);
                     }
-                };
-
-                requestAnimationFrame(animate);
+                });
             }
         }
-    }, [shouldShowMessage]);
+    }, [shouldShowMessage, startRevealAnimation]);
 
     const handlePlayerTurn = () => {
         if (!waitingForClick) return;
 
-        // 停止当前播放的音频
         stopAudio();
 
         setWaitingForClick(false);
@@ -277,11 +348,9 @@ export default function ChatPage() {
     const handleSendMessage = () => {
         if (!inputText.trim() || !showInputBox) return;
 
-        // 停止音频
         stopAudio();
 
         const userInput = inputText;
-        console.log('发送消息:', userInput);
 
         const userMessage: Message = {
             id: Date.now(),
@@ -301,7 +370,6 @@ export default function ChatPage() {
         const client = wsClientRef.current;
         if (client) {
             if (!client.isConnected()) {
-                console.log('WebSocket 未连接，尝试重新连接...');
                 client.connect();
                 setTimeout(() => {
                     client.send('chat', userInput, 'user');
@@ -335,6 +403,12 @@ export default function ChatPage() {
     };
 
     const handleRootClick = (e: React.MouseEvent) => {
+        if (displayMode === '全屏' && !document.fullscreenElement) {
+            document.documentElement.requestFullscreen().catch(err => {
+                console.warn('全屏失败:', err);
+            });
+        }
+
         if (isSettingsOpen) return;
         if (isLoading) return;
 
@@ -348,9 +422,30 @@ export default function ChatPage() {
         }
     };
 
+    useEffect(() => {
+        if (displayMode === '全屏' && !document.fullscreenElement && !hasShownFullscreenTip.current && settingsLoadedRef.current) {
+            hasShownFullscreenTip.current = true;
+            info('点击页面任意位置即可进入全屏模式', {
+                title: '全屏提示',
+                duration: 5000,
+            });
+        }
+    }, [displayMode, settingsLoadedRef]);
+
     const showLoading = isLoading && !showInputBox;
     const shouldShowContent = !showInputBox && !showLoading && currentContent;
     const displayContent = shouldShowContent ? currentContent : '';
+
+    const handleTextSpeedChange = useCallback((speed: number) => {
+        setTextSpeed(speed);
+    }, []);
+
+    const handleVoiceVolumeChange = useCallback((volume: number) => {
+        setVoiceVolume(volume);
+        if (audioRef.current) {
+            audioRef.current.volume = volume / 100;
+        }
+    }, []);
 
     return (
         <>
@@ -458,6 +553,8 @@ export default function ChatPage() {
                 <SettingsOverlay
                     isOpen={isSettingsOpen}
                     onClose={() => setIsSettingsOpen(false)}
+                    onTextSpeedChange={handleTextSpeedChange}
+                    onVoiceVolumeChange={handleVoiceVolumeChange}
                 />
             </div>
         </>
