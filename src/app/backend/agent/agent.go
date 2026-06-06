@@ -149,24 +149,26 @@ func (a *Agent) ProcessMessage(userMessage string, memoryDeltas map[string]*Memo
 		Content: a.promptBuilder.BuildUserMessage(userMessage),
 	})
 
-	llmResponse, err := a.llmClient.Chat(a.messages)
-	if err != nil {
-		return nil, err
-	}
-
-	// 保存到会话存储
 	if a.sessionStore != nil {
 		if err := a.sessionStore.AddMessage(a.sessionID, "user", userMessage); err != nil {
 			log.Printf("[Agent] 保存用户消息失败: %v", err)
 		}
-		if err := a.sessionStore.AddMessage(a.sessionID, "assistant", llmResponse); err != nil {
-			log.Printf("[Agent] 保存助手回复失败: %v", err)
-		}
+	}
+
+	llmResponse, recordable, err := a.llmClient.Chat(a.messages)
+	if err != nil {
+		return nil, err
 	}
 
 	parsed := parser.ParseTagOutput(llmResponse)
 	result.Reply = parsed.EchoContent
 	result.Expression = parsed.Expression
+
+	if a.sessionStore != nil && recordable {
+		if err := a.sessionStore.AddMessage(a.sessionID, "assistant", llmResponse); err != nil {
+			log.Printf("[Agent] 保存助手回复失败: %v", err)
+		}
+	}
 
 	a.messages = append(a.messages, llm.Message{
 		Role:    "assistant",

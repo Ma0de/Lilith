@@ -28,7 +28,7 @@ func NewOpenAIClient(baseURL, apiKey, modelName string) *OpenAIClient {
 	}
 }
 
-func (c *OpenAIClient) Chat(messages []Message) (string, error) {
+func (c *OpenAIClient) Chat(messages []Message) (string, bool, error) {
 	reqBody := ChatRequest{
 		Model:    c.modelName,
 		Messages: messages,
@@ -36,19 +36,16 @@ func (c *OpenAIClient) Chat(messages []Message) (string, error) {
 
 	jsonData, err := json.Marshal(reqBody)
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
 
-	// 智能拼接 URL
 	baseURL := c.baseURL
 	if baseURL == "" {
 		baseURL = "https://api.openai.com"
 	}
-	// 移除末尾的 /v1 如果存在
 	if len(baseURL) > 3 && baseURL[len(baseURL)-3:] == "/v1" {
 		baseURL = baseURL[:len(baseURL)-3]
 	}
-	// 确保末尾有 /
 	if baseURL[len(baseURL)-1] != '/' {
 		baseURL += "/"
 	}
@@ -58,7 +55,7 @@ func (c *OpenAIClient) Chat(messages []Message) (string, error) {
 
 	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
 
 	req.Header.Set("Content-Type", "application/json")
@@ -67,7 +64,7 @@ func (c *OpenAIClient) Chat(messages []Message) (string, error) {
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		log.Printf("[LLM] 请求失败: %v", err)
-		return "", err
+		return "", false, err
 	}
 	defer resp.Body.Close()
 
@@ -76,25 +73,25 @@ func (c *OpenAIClient) Chat(messages []Message) (string, error) {
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		log.Printf("[LLM] 读取响应体失败: %v", err)
-		return "", err
+		return "", false, err
 	}
 
 	log.Printf("[LLM] 响应体: %s", string(body))
 
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("API error: status=%d, body=%s", resp.StatusCode, string(body))
+		return "", false, fmt.Errorf("API error: status=%d, body=%s", resp.StatusCode, string(body))
 	}
 
 	var chatResp ChatResponse
 	if err := json.Unmarshal(body, &chatResp); err != nil {
-		return "", fmt.Errorf("解析响应失败: %v, body=%s", err, string(body))
+		return "", false, fmt.Errorf("解析响应失败: %v, body=%s", err, string(body))
 	}
 
 	if len(chatResp.Choices) == 0 {
-		return "", fmt.Errorf("no choices in response")
+		return "", false, fmt.Errorf("no choices in response")
 	}
 
 	log.Printf("[LLM] 解析后的回复: %s", chatResp.Choices[0].Message.Content)
 
-	return chatResp.Choices[0].Message.Content, nil
+	return chatResp.Choices[0].Message.Content, true, nil
 }

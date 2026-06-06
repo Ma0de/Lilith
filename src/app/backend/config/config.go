@@ -1,3 +1,4 @@
+// config.go
 package config
 
 import (
@@ -82,8 +83,11 @@ func Load() *Config {
 	}
 
 	cfg := defaultConfig()
+	// 先加载 lilith.cfg.env
 	loadFromFile(cfg, configFile)
+	// 再加载 .env（会覆盖）
 	loadFromFile(cfg, ".env")
+	// 最后加载系统环境变量（最高优先级）
 	loadFromEnv(cfg)
 
 	globalConfig = cfg
@@ -139,6 +143,11 @@ func loadFromFile(cfg *Config, filename string) {
 		key := strings.TrimSpace(parts[0])
 		value := strings.TrimSpace(parts[1])
 
+		// 跳过掩码值（避免覆盖真实值）
+		if isMaskedValue(value) {
+			continue
+		}
+
 		switch key {
 		case "LLM_BASE_URL":
 			cfg.LLM.BaseURL = value
@@ -184,6 +193,22 @@ func loadFromFile(cfg *Config, filename string) {
 	}
 }
 
+// isMaskedValue 判断是否为掩码值（前端传来的 **** 或部分掩码）
+func isMaskedValue(value string) bool {
+	if value == "" {
+		return false
+	}
+	// 完全掩码
+	if value == "****" {
+		return true
+	}
+	// 部分掩码格式如 "sk-****xxxx"
+	if strings.Contains(value, "****") {
+		return true
+	}
+	return false
+}
+
 func loadFromEnv(cfg *Config) {
 	if v := os.Getenv("LLM_BASE_URL"); v != "" {
 		cfg.LLM.BaseURL = v
@@ -205,6 +230,43 @@ func loadFromEnv(cfg *Config) {
 	}
 	if v := os.Getenv("SERVER_PORT"); v != "" {
 		cfg.Server.Port = v
+	}
+	if v := os.Getenv("TTS_USE_LOCAL"); v != "" {
+		cfg.TTS.UseLocal = strings.ToLower(v) == "true"
+	}
+	if v := os.Getenv("TTS_LOCAL_PORT"); v != "" {
+		cfg.TTS.LocalPort = v
+	}
+	if v := os.Getenv("SERVER_EXPOSE_PUBLIC"); v != "" {
+		cfg.Server.ExposePublic = strings.ToLower(v) == "true"
+	}
+	if v := os.Getenv("MEMORY_FILE_PATH"); v != "" {
+		cfg.Storage.MemoryFilePath = v
+	}
+	if v := os.Getenv("MEMORY_ENABLED"); v != "" {
+		cfg.Storage.MemoryEnabled = strings.ToLower(v) == "true"
+	}
+	if v := os.Getenv("DISPLAY_MODE"); v != "" {
+		cfg.Game.DisplayMode = v
+	}
+	if v := os.Getenv("TEXT_SPEED"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			cfg.Game.TextSpeed = n
+		}
+	}
+	if v := os.Getenv("VOICE_VOLUME"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			cfg.Game.VoiceVolume = n
+		}
+	}
+	if v := os.Getenv("GAME_VOICE"); v != "" {
+		cfg.Game.GameVoice = v
+	}
+	if v := os.Getenv("GAME_LANGUAGE"); v != "" {
+		cfg.Game.GameLanguage = v
+	}
+	if v := os.Getenv("SESSION_ID"); v != "" {
+		cfg.Game.SessionID = v
 	}
 }
 
@@ -284,10 +346,18 @@ func Reload() *Config {
 	return cfg
 }
 
-// MaskAPIKey 隐藏 API 密钥
+// MaskAPIKey 隐藏 API 密钥（仅用于显示，不用于存储）
 func MaskAPIKey(key string) string {
+	if key == "" {
+		return ""
+	}
 	if len(key) <= 8 {
 		return "****"
 	}
 	return key[:4] + "****" + key[len(key)-4:]
+}
+
+// GetRawConfig 获取原始配置（不移除掩码，用于内部使用）
+func GetRawConfig() *Config {
+	return Load()
 }

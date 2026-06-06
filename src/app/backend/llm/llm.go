@@ -21,5 +21,5 @@ type ChatResponse struct {
 }
 
 type LLMClient interface {
-	Chat(messages []Message) (string, error)
+	Chat(messages []Message) (string, bool, error) // content, recordable, error
 }

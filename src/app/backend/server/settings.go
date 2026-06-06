@@ -154,13 +154,17 @@ func (sm *SettingsManager) UpdateAdvancedSettings(settings *AdvancedSettings) er
 	defer sm.mu.Unlock()
 
 	cfg := config.Load()
+	oldCfg := *cfg // 保存旧值
 
 	// LLM
 	if settings.LLM.BaseURL != "" {
 		cfg.LLM.BaseURL = settings.LLM.BaseURL
 	}
+	// 只有当新值不是掩码且不为空时才更新
 	if settings.LLM.APIKey != "" && !isMasked(settings.LLM.APIKey) {
 		cfg.LLM.APIKey = settings.LLM.APIKey
+	} else if settings.LLM.APIKey == "" {
+		// 如果传空字符串，不覆盖原有值（保持原样）
 	}
 	if settings.LLM.ModelName != "" {
 		cfg.LLM.ModelName = settings.LLM.ModelName
@@ -193,9 +197,21 @@ func (sm *SettingsManager) UpdateAdvancedSettings(settings *AdvancedSettings) er
 	}
 	cfg.Storage.MemoryEnabled = settings.Storage.Enabled
 
-	// Session
-	if settings.Session.SessionID != "" {
+	// Session - 只有当 sessionId 发生变化时才更新
+	if settings.Session.SessionID != "" && settings.Session.SessionID != cfg.Game.SessionID {
 		cfg.Game.SessionID = settings.Session.SessionID
+	}
+
+	// 如果没有实际变化，跳过保存
+	if cfg.LLM.BaseURL == oldCfg.LLM.BaseURL &&
+		cfg.LLM.APIKey == oldCfg.LLM.APIKey &&
+		cfg.LLM.ModelName == oldCfg.LLM.ModelName &&
+		cfg.TTS.BaseURL == oldCfg.TTS.BaseURL &&
+		cfg.TTS.APIKey == oldCfg.TTS.APIKey &&
+		cfg.Server.Port == oldCfg.Server.Port &&
+		cfg.Game.SessionID == oldCfg.Game.SessionID {
+		log.Printf("[Settings] 设置无变化，跳过保存")
+		return nil
 	}
 
 	if err := config.Save(cfg); err != nil {
