@@ -2,3 +2,4 @@ web/*
 .env
 lilith_memory.json
 lilith.cfg.env
+lilith_session.json

@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"lilith-app/agent/parser"
 	"lilith-app/llm"
+	"lilith-app/session"
+	"log"
 )
 
 type Agent struct {
@@ -11,6 +13,8 @@ type Agent struct {
 	memoryManager *MemoryManager
 	promptBuilder *PromptBuilder
 	messages      []llm.Message
+	sessionStore  *session.SessionStore
+	sessionID     string
 }
 
 type MemoryStorageAdapter struct {
@@ -40,7 +44,68 @@ func NewAgent(llmClient llm.LLMClient, getMemoryFunc func(string) (*MemoryList, 
 		memoryManager: NewMemoryManager(adapter),
 		promptBuilder: NewPromptBuilder(),
 		messages:      make([]llm.Message, 0),
+		sessionStore:  nil,
+		sessionID:     "",
 	}
+}
+
+// SetSessionStore 设置会话存储
+func (a *Agent) SetSessionStore(store *session.SessionStore, sessionID string) {
+	a.sessionStore = store
+	a.sessionID = sessionID
+}
+
+// AddUserMessage 添加用户消息到对话历史（用于加载历史记录）
+func (a *Agent) AddUserMessage(content string) {
+	a.messages = append(a.messages, llm.Message{
+		Role:    "user",
+		Content: content,
+	})
+}
+
+// AddAssistantMessage 添加助手消息到对话历史（用于加载历史记录）
+func (a *Agent) AddAssistantMessage(content string) {
+	a.messages = append(a.messages, llm.Message{
+		Role:    "assistant",
+		Content: content,
+	})
+}
+
+// LoadSessionHistory 从会话存储加载历史消息到 LLM 上下文
+func (a *Agent) LoadSessionHistory(sessionID string, maxMessages int) error {
+	if a.sessionStore == nil {
+		return nil
+	}
+
+	messages, err := a.sessionStore.GetMessages(sessionID)
+	if err != nil {
+		return err
+	}
+
+	// 清空当前消息，只保留 system prompt
+	newMessages := make([]llm.Message, 0)
+	for _, msg := range a.messages {
+		if msg.Role == "system" {
+			newMessages = append(newMessages, msg)
+			break
+		}
+	}
+
+	// 加载历史消息，只取最近的 maxMessages 条
+	start := 0
+	if len(messages) > maxMessages {
+		start = len(messages) - maxMessages
+	}
+	for i := start; i < len(messages); i++ {
+		newMessages = append(newMessages, llm.Message{
+			Role:    messages[i].Role,
+			Content: messages[i].Content,
+		})
+	}
+
+	a.messages = newMessages
+	log.Printf("[Agent] 加载会话历史: session=%s, 消息数=%d", sessionID, len(newMessages)-1)
+	return nil
 }
 
 type ProcessResult struct {
@@ -87,6 +152,16 @@ func (a *Agent) ProcessMessage(userMessage string, memoryDeltas map[string]*Memo
 	llmResponse, err := a.llmClient.Chat(a.messages)
 	if err != nil {
 		return nil, err
+	}
+
+	// 保存到会话存储
+	if a.sessionStore != nil {
+		if err := a.sessionStore.AddMessage(a.sessionID, "user", userMessage); err != nil {
+			log.Printf("[Agent] 保存用户消息失败: %v", err)
+		}
+		if err := a.sessionStore.AddMessage(a.sessionID, "assistant", llmResponse); err != nil {
+			log.Printf("[Agent] 保存助手回复失败: %v", err)
+		}
 	}
 
 	parsed := parser.ParseTagOutput(llmResponse)
@@ -144,5 +219,40 @@ func (a *Agent) GetMemoryDelta(listName string) (*MemoryDelta, error) {
 }
 
 func (a *Agent) ClearConversation() {
-	a.messages = make([]llm.Message, 0)
+	// 清空对话历史，但保留 system prompt
+	newMessages := make([]llm.Message, 0)
+	for _, msg := range a.messages {
+		if msg.Role == "system" {
+			newMessages = append(newMessages, msg)
+			break
+		}
+	}
+	a.messages = newMessages
+
+	// 如果启用了会话存储，也清空存储中的消息
+	if a.sessionStore != nil {
+		a.sessionStore.ClearMessages(a.sessionID)
+	}
+}
+
+func (a *Agent) LoadFromSessionStore(store *session.SessionStore, sessionID string, maxMessages int) error {
+	a.sessionStore = store
+	a.sessionID = sessionID
+
+	messages, err := store.GetMessages(sessionID)
+	if err != nil {
+		return err
+	}
+
+	// 直接加载到 messages 中（跳过 system prompt，因为还没有）
+	for i := len(messages) - maxMessages; i < len(messages); i++ {
+		if i < 0 {
+			continue
+		}
+		a.messages = append(a.messages, llm.Message{
+			Role:    messages[i].Role,
+			Content: messages[i].Content,
+		})
+	}
+	return nil
 }

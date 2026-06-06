@@ -1,4 +1,3 @@
-// main.go
 package main
 
 import (
@@ -8,7 +7,10 @@ import (
 	"net/http"
 	"os"
 
+	"lilith-app/agent"
+	"lilith-app/llm"
 	"lilith-app/server"
+	"lilith-app/session"
 	"lilith-app/storage"
 
 	"github.com/joho/godotenv"
@@ -20,17 +22,23 @@ var frontendFS embed.FS
 var globalStore *storage.MemoryStore
 
 func main() {
-	err := godotenv.Load()
-	if err != nil {
-		log.Println("未找到 .env 文件，使用系统环境变量")
-	}
+	_ = godotenv.Load()
 
-	// 初始化设置管理器（必须在其他初始化之前）
 	server.InitSettingsManager()
 
-	err = initStorage()
+	// 初始化会话存储
+	sessionStore, err := session.NewSessionStore("./lilith_session.json")
 	if err != nil {
-		log.Fatalf("初始化存储失败: %v", err)
+		log.Printf("会话存储初始化失败: %v", err)
+	}
+	defer func() {
+		if sessionStore != nil {
+			sessionStore.Close()
+		}
+	}()
+
+	if err = initStorage(); err != nil {
+		log.Fatalf("存储初始化失败: %v", err)
 	}
 	defer closeStorage()
 
@@ -39,32 +47,33 @@ func main() {
 	llmModelName := os.Getenv("LLM_MODEL_NAME")
 	ttsBaseURL := os.Getenv("TTS_BASE_URL")
 
-	if llmBaseURL == "" {
-		log.Fatal("LLM_BASE_URL 未设置")
-	}
-	if llmAPIKey == "" {
-		log.Fatal("LLM_API_KEY 未设置")
-	}
-	if llmModelName == "" {
-		log.Fatal("LLM_MODEL_NAME 未设置")
-	}
-	if ttsBaseURL == "" {
-		log.Fatal("TTS_BASE_URL 未设置")
+	if llmBaseURL == "" || llmAPIKey == "" || llmModelName == "" || ttsBaseURL == "" {
+		log.Fatal("缺少必要的环境变量")
 	}
 
-	server.InitAgent(llmBaseURL, llmAPIKey, llmModelName, storageGetMemory, storageSetMemory)
+	// 创建 LLM 客户端
+	llmClient := llm.NewOpenAIClient(llmBaseURL, llmAPIKey, llmModelName)
+
+	// 创建 Agent
+	ag := agent.NewAgent(llmClient, storageGetMemory, storageSetMemory)
+
+	// 加载历史会话到 Agent 的 messages 中
+	if sessionStore != nil {
+		sessionID := server.GetSettingsManager().GetSessionID()
+		if err := ag.LoadFromSessionStore(sessionStore, sessionID, 50); err != nil {
+			log.Printf("加载历史会话失败: %v", err)
+		}
+	}
+
+	// 替换 server 包的 InitAgent，改为直接设置 globalAgent
+	server.SetAgent(ag)
 	server.InitTTSClient(ttsBaseURL)
 	server.InitRoutes()
 
-	staticFS, err := fs.Sub(frontendFS, "web/out")
-	if err != nil {
-		log.Fatal(err)
-	}
-
+	staticFS, _ := fs.Sub(frontendFS, "web/out")
 	http.Handle("/", http.FileServer(http.FS(staticFS)))
 
 	log.Println("Lilith 启动成功: http://localhost:8080")
-	log.Println("WebSocket 端点: ws://localhost:8080/ws")
 	log.Fatal(http.ListenAndServe(":8080", nil))
 }
 
@@ -85,24 +94,16 @@ func storageGetMemory(listName string) (*server.MemoryList, error) {
 		return nil, nil
 	}
 	storageList, err := globalStore.Get(listName)
-	if err != nil {
+	if err != nil || storageList == nil {
 		return nil, err
 	}
-	if storageList == nil {
-		return nil, nil
-	}
-
-	agentItems := make([]server.MemoryItem, len(storageList.Items))
+	items := make([]server.MemoryItem, len(storageList.Items))
 	for i, item := range storageList.Items {
-		agentItems[i] = server.MemoryItem{
-			Value:   item.Value,
-			IsFuzzy: item.IsFuzzy,
-		}
+		items[i] = server.MemoryItem{Value: item.Value, IsFuzzy: item.IsFuzzy}
 	}
-
 	return &server.MemoryList{
 		Version:    storageList.Version,
-		Items:      agentItems,
+		Items:      items,
 		UpdateTime: storageList.UpdateAt,
 	}, nil
 }
@@ -111,18 +112,13 @@ func storageSetMemory(listName string, list *server.MemoryList) error {
 	if globalStore == nil {
 		return nil
 	}
-
-	storageItems := make([]storage.MemoryItem, len(list.Items))
+	items := make([]storage.MemoryItem, len(list.Items))
 	for i, item := range list.Items {
-		storageItems[i] = storage.MemoryItem{
-			Value:   item.Value,
-			IsFuzzy: item.IsFuzzy,
-		}
+		items[i] = storage.MemoryItem{Value: item.Value, IsFuzzy: item.IsFuzzy}
 	}
-
 	return globalStore.Set(listName, &storage.MemoryList{
 		Version:  list.Version,
-		Items:    storageItems,
+		Items:    items,
 		UpdateAt: list.UpdateTime,
 	})
 }
